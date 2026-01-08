@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { getFirestore, collection, doc, onSnapshot, setDoc, addDoc, serverTimestamp, query } from 'firebase/firestore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Edit3, BarChart3, CheckSquare, Plus, Trash2, Save, Image as ImageIcon, Share2, ArrowLeft, CheckCircle, Users, Download, Lock, Upload, AlertCircle } from 'lucide-react';
@@ -23,30 +23,8 @@ const appId = 'my-survey-app';
 
 const QUIZ_ID = 'global_shared_quiz'; 
 const ADMIN_PASSWORD = '12686505';
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
 // --- 2. 輔助函數 ---
-const compressImage = (file) => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (e) => {
-      const img = new Image();
-      img.src = e.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 500;
-        const scale = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scale;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
-      };
-    };
-  });
-};
-
 const exportToCSV = (quizData, responses) => {
   const headers = ['提交時間', '使用者ID', ...quizData.questions.map(q => q.text)];
   const rows = responses.map(r => {
@@ -74,7 +52,7 @@ export default function App() {
     signInAnonymously(auth).catch(err => console.error("Auth error:", err));
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
-      if (!u) setLoading(false);
+      if (loading) setLoading(false);
     });
   }, []);
 
@@ -114,26 +92,20 @@ export default function App() {
   if (loading) return <div className="min-h-screen flex items-center justify-center">載入中...</div>;
 
   return (
-    // 這是一個「大盒子」，解決 Adjacent JSX 報錯，並讓背景全螢幕
     <div className="w-full min-h-screen bg-gray-100 text-gray-800 font-sans">
-      
-      {/* 頂部標題欄 */}
       <header className="w-full bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('home')}>
-            <div className="bg-blue-600 text-white p-2 rounded-lg">
-              <CheckSquare size={20} />
-            </div>
+            <div className="bg-blue-600 text-white p-2 rounded-lg"><CheckSquare size={20} /></div>
             <h1 className="text-xl font-bold">雲端問卷大師</h1>
           </div>
         </div>
       </header>
 
-      {/* 主內容區塊 */}
       <main className="max-w-5xl mx-auto px-4 py-8">
         {view === 'home' && <HomeView quizTitle={quizData.title} responseCount={responses.length} onNavigate={setView} />}
         {view === 'admin' && (
-          <AdminAuthWrapper onCancel={() => setView('home')}>
+          <AdminAuthWrapper currentUser={user} onCancel={() => setView('home')}>
             <AdminPanel initialData={quizData} onSave={handleSaveQuiz} />
           </AdminAuthWrapper>
         )}
@@ -144,28 +116,48 @@ export default function App() {
   );
 }
 
-// --- 下方為子元件 (維持不變) ---
-function AdminAuthWrapper({ children, onCancel }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+// --- 子元件區塊 ---
+
+function AdminAuthWrapper({ children, onCancel, currentUser }) {
+  const [isPasswordVerified, setIsPasswordVerified] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
+
+  const handleGoogleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      alert("Google 登入失敗：" + err.message);
+    }
+  };
+
   const handleLogin = (e) => {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) { setIsAuthenticated(true); setError(false); }
+    if (password === ADMIN_PASSWORD) { setIsPasswordVerified(true); setError(false); }
     else { setError(true); }
   };
-  if (isAuthenticated) return children;
+
+  const isGoogleUser = currentUser?.providerData?.some(p => p.providerId === 'google.com');
+  if (isPasswordVerified || isGoogleUser) return children;
+
   return (
-    <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-lg border mt-10">
-      <h2 className="text-2xl font-bold mb-4 text-center">管理員驗證</h2>
-      <form onSubmit={handleLogin} className="space-y-4">
+    <div className="max-w-md mx-auto bg-white p-8 rounded-xl shadow-lg border mt-10 text-center">
+      <h2 className="text-2xl font-bold mb-6">管理員驗證</h2>
+      <form onSubmit={handleLogin} className="space-y-4 mb-6">
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-4 py-3 border rounded-lg text-center" placeholder="請輸入密碼" />
-        {error && <p className="text-red-500 text-sm text-center">密碼錯誤</p>}
-        <div className="grid grid-cols-2 gap-4">
-          <button type="button" onClick={onCancel} className="py-3 bg-gray-100 rounded-lg">取消</button>
-          <button type="submit" className="py-3 bg-red-600 text-white rounded-lg">進入後台</button>
-        </div>
+        {error && <p className="text-red-500 text-sm">密碼錯誤</p>}
+        <button type="submit" className="w-full py-3 bg-red-600 text-white rounded-lg font-bold">密碼進入</button>
       </form>
+      <div className="relative my-6"><div className="absolute inset-0 flex items-center"><span className="w-full border-t"></span></div><div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-400">或</span></div></div>
+      <button onClick={handleGoogleLogin} className="w-full py-3 border-2 border-gray-300 rounded-lg flex items-center justify-center gap-2 hover:bg-gray-50 font-bold">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="G" className="w-5 h-5" /> 使用 Google 登入
+      </button>
+      <div className="mt-8 p-4 bg-gray-50 rounded-lg text-xs break-all text-left">
+        <p className="font-bold text-gray-400">UID: <span className="text-blue-600 select-all">{currentUser?.uid || '載入中'}</span></p>
+        <p>來源: {isGoogleUser ? 'Google 安全' : '匿名'}</p>
+      </div>
+      <button onClick={onCancel} className="mt-4 text-gray-400 text-sm hover:underline">返回首頁</button>
     </div>
   );
 }
@@ -197,33 +189,31 @@ function HomeView({ quizTitle, responseCount, onNavigate }) {
 
 function AdminPanel({ initialData, onSave }) {
   const [title, setTitle] = useState(initialData.title || "");
-  const [description, setDescription] = useState(initialData.description || "");
   const [questions, setQuestions] = useState(initialData.questions || []);
   const addQuestion = () => setQuestions([...questions, { id: Date.now().toString(), text: "新問題", type: "single", options: ["選項 1"] }]);
   const updateQuestion = (i, f, v) => { const n = [...questions]; n[i][f] = v; setQuestions(n); };
   const removeQuestion = (i) => { const n = [...questions]; n.splice(i, 1); setQuestions(n); };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg">
+    <div className="bg-white rounded-xl shadow-lg overflow-hidden">
       <div className="bg-indigo-600 p-6 flex justify-between items-center text-white">
-        <h2 className="text-xl font-bold">編輯問卷</h2>
-        <button onClick={() => onSave({ title, description, questions })} className="bg-white text-indigo-600 px-4 py-2 rounded-lg font-bold">儲存發布</button>
+        <h2 className="text-xl font-bold text-white">編輯問卷</h2>
+        <button onClick={() => onSave({ title, questions })} className="bg-white text-indigo-600 px-4 py-2 rounded-lg font-bold">儲存發布</button>
       </div>
-      <div className="p-6 space-y-6">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full text-2xl font-bold border-b p-2" placeholder="問卷標題" />
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full p-2 border rounded" placeholder="問卷描述" />
+      <div className="p-6 space-y-6 text-gray-800">
+        <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full text-2xl font-bold border-b p-2 focus:outline-none focus:border-indigo-500" placeholder="問卷標題" />
         <div className="space-y-4">
           {questions.map((q, i) => (
             <div key={q.id} className="p-4 border rounded bg-gray-50 relative">
-              <button onClick={() => removeQuestion(i)} className="absolute top-2 right-2 text-red-500"><Trash2 size={16}/></button>
-              <input value={q.text} onChange={(e) => updateQuestion(i, 'text', e.target.value)} className="w-full mb-2 p-2 border rounded" />
-              <select value={q.type} onChange={(e) => updateQuestion(i, 'type', e.target.value)} className="p-1 border rounded text-sm">
+              <button onClick={() => removeQuestion(i)} className="absolute top-2 right-2 text-red-500 hover:text-red-700"><Trash2 size={16}/></button>
+              <input value={q.text} onChange={(e) => updateQuestion(i, 'text', e.target.value)} className="w-full mb-2 p-2 border rounded" placeholder="問題描述" />
+              <select value={q.type} onChange={(e) => updateQuestion(i, 'type', e.target.value)} className="p-2 border rounded text-sm bg-white">
                 <option value="single">單選</option>
                 <option value="multi">複選</option>
               </select>
             </div>
           ))}
-          <button onClick={addQuestion} className="w-full py-4 border-2 border-dashed rounded text-gray-400">+ 新增題目</button>
+          <button onClick={addQuestion} className="w-full py-4 border-2 border-dashed rounded text-gray-400 hover:bg-gray-50 transition-colors">+ 新增題目</button>
         </div>
       </div>
     </div>
@@ -244,7 +234,7 @@ function SurveyTaker({ quizData, onSubmit, onCancel }) {
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="bg-white p-8 rounded-xl shadow-sm border-t-8 border-blue-600">
         <h1 className="text-3xl font-bold mb-2">{quizData.title}</h1>
-        <p className="text-gray-600">{quizData.description}</p>
+        <p className="text-gray-600">請填寫以下資訊</p>
       </div>
       {quizData.questions.map((q, i) => (
         <div key={q.id} className="bg-white p-6 rounded-xl border shadow-sm">
@@ -284,7 +274,7 @@ function StatsDashboard({ quizData, responses, onBack }) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">結果分析 ({responses.length} 份)</h2>
+        <h2 className="text-2xl font-bold text-gray-800">結果分析 ({responses.length} 份)</h2>
         <button onClick={() => exportToCSV(quizData, responses)} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold shadow-md"><Download size={18}/> 匯出 CSV</button>
       </div>
       {stats.map((s, i) => (
