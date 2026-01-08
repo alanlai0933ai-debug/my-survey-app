@@ -1,6 +1,7 @@
-export default {
+// postcss.config.cjs
+module.exports = {
   plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
+    '@tailwindcss/postcss': {}, // 這是解決錯誤的關鍵改動
+    'autoprefixer': {},
   },
 }
