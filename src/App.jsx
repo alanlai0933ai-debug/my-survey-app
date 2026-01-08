@@ -86,8 +86,8 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 
 // 🛡️ 管理員白名單：請在此輸入允許進入後台的 Google Email
 const ADMIN_EMAILS = [
-  "your.email@gmail.com", // <--- 請修改這裡為您的 Email
-  "admin@example.com"
+"alanlai0933.ai@gmail.com", // 您的主要帳號
+  "alanlai0933@gmail.com"     // 您的備用帳號
 ];
 
 // --- 2. 輔助函數 ---
