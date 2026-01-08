@@ -64,12 +64,13 @@ try {
 } catch (e) {
   // 本地端 fallback (示意用，請填入您真實的 config)
   firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyAKCRTN4BWMqpL2e6svx1FLN5RiJIdYRtk", // 這是您專案真實的 Key
+  authDomain: "icc-test-4286c.firebaseapp.com",
+  projectId: "icc-test-4286c",
+  storageBucket: "icc-test-4286c.firebasestorage.app",
+  messagingSenderId: "353118805586",
+  appId: "1:353118805586:web:dd46d68792746c4b33c98b",
+  measurementId: "G-J3L4C7B70P"
   };
 }
 
@@ -77,7 +78,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 // ⚠️ 在本地端請將 appId 改為固定字串，例如: const appId = 'my-survey-app';
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const appId = 'my-survey-app';
 
 // --- 安全設定 ---
 const QUIZ_ID = 'global_shared_quiz'; 
