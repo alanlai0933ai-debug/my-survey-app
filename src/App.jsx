@@ -333,7 +333,7 @@ export default function App() {
             <div className="bg-indigo-600 text-white p-2.5 rounded-xl shadow-lg shadow-indigo-200 group-hover:scale-110 transition-transform">
               <CheckSquare size={22} />
             </div>
-            <h1 className="text-xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-700 to-purple-700 tracking-tight">互動挑戰實驗室</h1>
+            <h1 className="text-xl font-extrabold text-indigo-700 tracking-tight">互動挑戰實驗室</h1>
           </div>
           <div className="flex items-center gap-4">
             {user?.email ? (
@@ -476,7 +476,7 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
   return (
     <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100 min-h-[600px] flex flex-col relative">
       {/* 頂部導航與頁籤 */}
-      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6">
+      <div className="bg-indigo-600 to-purple-600 p-6">
         <div className="flex justify-between items-center text-white mb-6">
           <h2 className="text-xl font-bold flex items-center gap-2"><Edit3 size={24}/> 後台管理系統</h2>
           {tab === 'design' && (
