@@ -1138,9 +1138,54 @@ function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting }) {
               </span>
           </div>
         </div>
-        <div className="h-3 bg-slate-200 rounded-full overflow-hidden shadow-inner mb-8">
-          <motion.div className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 0.8 }} />
+{/* 🌊 海浪感進度條開始 🌊 */}
+<div className="relative mb-8 mt-4">
+  {/* 軌道背景 */}
+  <div className="h-5 bg-blue-50/50 rounded-full overflow-hidden shadow-inner border border-blue-100 relative backdrop-blur-sm">
+    
+    {/* 藍色水流本體 */}
+    <motion.div 
+      className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 relative overflow-hidden"
+      initial={{ width: 0 }} 
+      animate={{ width: `${progress}%` }} 
+      transition={{ type: "spring", stiffness: 35, damping: 12 }}
+    >
+        {/* 🌊 水紋特效：使用斜向條紋模擬水流 */}
+        <motion.div 
+           className="absolute inset-0 w-full h-full opacity-20"
+           style={{ 
+             backgroundImage: 'linear-gradient(45deg,rgba(255,255,255,.3) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.3) 50%,rgba(255,255,255,.3) 75%,transparent 75%,transparent)', 
+             backgroundSize: '1rem 1rem' 
+           }}
+           animate={{ backgroundPosition: ["0rem 0rem", "1rem 0rem"] }}
+           transition={{ repeat: Infinity, ease: "linear", duration: 1 }}
+        />
+        
+        {/* 🫧 浪花氣泡：模擬前端的泡沫 */}
+        <div className="absolute right-1 top-1 w-1.5 h-1.5 bg-white/60 rounded-full animate-ping" />
+        <div className="absolute right-3 bottom-1 w-1 h-1 bg-white/40 rounded-full animate-pulse" />
+    </motion.div>
+  </div>
+
+  {/* 🐢 海龜領航員 (跟隨進度) */}
+  <motion.div 
+    className="absolute top-1/2 -translate-y-1/2 z-10"
+    initial={{ left: 0 }}
+    animate={{ left: `${progress}%` }}
+    transition={{ type: "spring", stiffness: 35, damping: 12 }} 
+    style={{ marginLeft: '-14px' }} // 校正位置，讓海龜剛好在線頭
+  >
+     <div className="relative group cursor-pointer">
+        {/* 發光光暈 */}
+        <div className="absolute -inset-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-30 blur transition-opacity"></div>
+        {/* 圖示本體 */}
+        <div className="bg-white p-1 rounded-full shadow-lg border-2 border-blue-200 flex items-center justify-center w-9 h-9 relative transform -rotate-6 hover:rotate-0 transition-transform">
+           <span className="text-lg">🐢</span> 
         </div>
+     </div>
+  </motion.div>
+</div>
+{/* 🌊 海浪感進度條結束 🌊 */}
 
         <AnimatePresence mode="wait">
           <motion.div
