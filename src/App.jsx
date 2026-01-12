@@ -5,8 +5,8 @@ import {
   signInAnonymously, 
   onAuthStateChanged, 
   signInWithCustomToken,
-  signInWithPopup,        // <--- 補上這行，確保權限驗證可用
-  GoogleAuthProvider      // <--- 補上這行，確保權限驗證可用
+  signInWithPopup,
+  GoogleAuthProvider
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -20,6 +20,13 @@ import {
   serverTimestamp, 
   orderBy 
 } from 'firebase/firestore';
+// 🆕 新增：引入 Storage 相關工具
+import { 
+  getStorage, 
+  ref, 
+  uploadBytes, 
+  getDownloadURL 
+} from 'firebase/storage';
 import { 
   BarChart, 
   Bar, 
@@ -105,29 +112,56 @@ try {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app); // 🆕 啟動 Storage
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-survey-app';
-const QUIZ_ID = 'global_shared_quiz'; 
+// 🆕 為了避免被舊的 3.9MB 資料卡住，我們換一個全新的 ID，像是一個全新的開始
+const QUIZ_ID = 'global_shared_quiz_v2'; 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-const ADMIN_EMAILS = ["alanlai0933.ai@gmail.com", "alanlai0933@gmail.com"]; // 管理員名單
+const ADMIN_EMAILS = ["alanlai0933.ai@gmail.com", "alanlai0933@gmail.com"];
 
-// --- 2. 輔助函數 ---
-const compressImage = (file) => {
+// --- 2. 輔助函數 (超級上傳小幫手) ---
+// 這個函式會做三件事：1.壓縮圖片 2.上傳到雲端 3.拿回網址
+const uploadImageToStorage = (file) => {
   return new Promise((resolve, reject) => {
+    // 1. 先用 Canvas 壓縮圖片
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = (e) => {
       const img = new Image();
       img.src = e.target.result;
-      img.onload = () => {
+      img.onload = async () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
+        const MAX_WIDTH = 800; // 即使上傳雲端，我們還是稍微壓一下，節省流量
         const scale = MAX_WIDTH / img.width;
         canvas.width = MAX_WIDTH;
         canvas.height = img.height * scale;
+        
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.8));
+        
+        // 轉成 Blob (二進位檔案)，準備上傳
+        canvas.toBlob(async (blob) => {
+          if (!blob) {
+            reject(new Error("圖片處理失敗"));
+            return;
+          }
+          try {
+            // 2. 設定上傳路徑：images/時間戳記_檔名
+            const fileName = `images/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+            const storageRef = ref(storage, fileName);
+            
+            // 3. 開始上傳
+            await uploadBytes(storageRef, blob);
+            
+            // 4. 拿到下載網址 (這就是我們要存進資料庫的短短字串)
+            const downloadURL = await getDownloadURL(storageRef);
+            resolve(downloadURL);
+          } catch (error) {
+            console.error("上傳失敗:", error);
+            reject(error);
+          }
+        }, 'image/jpeg', 0.8);
       };
       img.onerror = reject;
     };
@@ -257,8 +291,10 @@ export default function App() {
     return onSnapshot(quizRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        // 確保 questions 存在，避免崩潰
         setQuizData({ ...data, questions: data.questions || [] });
+      } else {
+        // 如果是新 ID 沒資料，給個預設值
+        setQuizData({ title: "新問卷 (v2)", questions: [] });
       }
     });
   }, []);
@@ -278,7 +314,7 @@ export default function App() {
     setIsSubmitting(true);
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'quizzes', QUIZ_ID), data);
-      alert("問卷已發布！");
+      alert("問卷已發布！(已使用雲端圖片儲存)");
       setView('home');
     } catch (e) { 
       alert("儲存失敗: " + e.message); 
@@ -329,7 +365,6 @@ export default function App() {
       <header className="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-20 border-b border-slate-200 print:hidden">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3 cursor-pointer group" onClick={() => !isSubmitting && setView('home')}>
-            {/* 🔴 [修復] 改用純色背景，解決漸層失效變白色的問題 */}
             <div className="bg-indigo-600 text-white p-2.5 rounded-xl shadow-lg shadow-indigo-200 group-hover:scale-110 transition-transform">
               <CheckSquare size={22} />
             </div>
@@ -390,12 +425,14 @@ export default function App() {
     </div>
   );
 }
-// --- 組件 1：AdminPanel (使用自定義確認視窗) ---
+// --- 組件 1：AdminPanel (升級版：支援 Storage 上傳) ---
 function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResponse }) {
   const [tab, setTab] = useState('design'); 
   const [title, setTitle] = useState(initialData.title || "");
   const [questions, setQuestions] = useState(initialData.questions || []);
-  const [confirmId, setConfirmId] = useState(null); // 控制 Modal 顯示
+  const [confirmId, setConfirmId] = useState(null); 
+  // 新增：上傳 loading 狀態，避免上傳一半就按儲存
+  const [uploading, setUploading] = useState(false);
 
   const addQuestion = (type) => {
     const base = { id: Date.now().toString(), text: "新題目", type, points: 10 }; 
@@ -426,19 +463,27 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
     setQuestions(next);
   };
 
+  // 🛠️ 核心修改：圖片上傳改為「先傳雲端，再存網址」
   const handleImageUpload = async (qIdx, file, field, optIdx = null) => {
     if (!file) return;
+    setUploading(true); // 鎖住按鈕
     try {
-      const base64 = await compressImage(file);
+      // 呼叫 Part 1 定義好的上傳工具
+      const imageUrl = await uploadImageToStorage(file);
+      
       const next = [...questions];
       if (optIdx !== null) {
-        next[qIdx].options[optIdx].image = base64;
+        next[qIdx].options[optIdx].image = imageUrl;
       } else {
-        next[qIdx].field = base64; 
-        if(field === 'image') next[qIdx].image = base64;
+        next[qIdx].field = imageUrl; 
+        if(field === 'image') next[qIdx].image = imageUrl;
       }
       setQuestions(next);
-    } catch (e) { alert("圖片處理錯誤"); }
+    } catch (e) { 
+      alert("圖片上傳失敗：" + e.message); 
+    } finally {
+      setUploading(false); // 解鎖按鈕
+    }
   };
 
   const handleOptionUpdate = (qIdx, optIdx, field, val) => {
@@ -463,29 +508,36 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
     setQuestions(next);
   };
 
+  // 🛠️ 核心修改：分類項目的圖片上傳也改版
   const handleItemImageUpload = async (qIdx, itemIdx, file) => {
     if (!file) return;
+    setUploading(true);
     try {
-      const base64 = await compressImage(file);
+      const imageUrl = await uploadImageToStorage(file);
       const next = [...questions];
-      next[qIdx].items[itemIdx].image = base64;
+      next[qIdx].items[itemIdx].image = imageUrl;
       setQuestions(next);
-    } catch (e) { alert("圖片處理錯誤"); }
+    } catch (e) { 
+        alert("圖片上傳失敗：" + e.message); 
+    } finally {
+        setUploading(false);
+    }
   };
 
   return (
     <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100 min-h-[600px] flex flex-col relative">
       {/* 頂部導航與頁籤 */}
-      <div className="bg-indigo-600 to-purple-600 p-6">
+      <div className="bg-indigo-600 p-6">
         <div className="flex justify-between items-center text-white mb-6">
           <h2 className="text-xl font-bold flex items-center gap-2"><Edit3 size={24}/> 後台管理系統</h2>
           {tab === 'design' && (
             <button 
               onClick={() => onSave({ title, questions })} 
-              disabled={isSubmitting}
+              disabled={isSubmitting || uploading} // 圖片上傳中也禁止儲存
               className="bg-white/20 backdrop-blur-md text-white border border-white/30 px-6 py-2 rounded-xl text-sm font-bold hover:bg-white/30 transition-all flex items-center gap-2 disabled:opacity-50"
             >
-              {isSubmitting ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>} 儲存發布
+              {isSubmitting || uploading ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>} 
+              {uploading ? "圖片上傳中..." : "儲存發布"}
             </button>
           )}
         </div>
