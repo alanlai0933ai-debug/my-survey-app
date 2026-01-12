@@ -647,14 +647,21 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                              return (
                                <div key={oIdx} className={`flex items-start gap-2 border p-2 rounded-lg ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-slate-50'}`}>
                                  <div className="mt-3">
-                                      <input 
-                                        type={q.isMulti ? "checkbox" : "radio"}
-                                        name={`correct-${q.id}`}
-                                        checked={isCorrect || false}
-                                        onChange={(e) => handleOptionUpdate(qIdx, oIdx, 'isCorrect', e.target.checked)}
-                                        className="w-5 h-5 accent-green-600 cursor-pointer"
-                                        title="設為正確答案"
-                                      />
+                                      {/* 🟢 修改版：自訂選擇按鈕 (取代原本的 input) */}
+<div 
+  onClick={() => handleOptionUpdate(qIdx, oIdx, 'isCorrect', !isCorrect)}
+  className={`w-6 h-6 cursor-pointer flex items-center justify-center border-2 transition-all ${
+     // 複選顯示圓角方形，單選顯示圓形
+     q.isMulti ? 'rounded-md' : 'rounded-full'
+  } ${
+     // 根據是否選取改變顏色
+     isCorrect ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300 hover:border-green-400'
+  }`}
+  title={isCorrect ? "點擊取消正確答案" : "設為正確答案"}
+>
+  {/* 選取時顯示打勾圖示 */}
+  {isCorrect && <CheckCircle size={14} className="text-white" />}
+</div>
                                  </div>
                                  <div className="w-12 h-12 bg-slate-200 rounded flex-shrink-0 relative overflow-hidden group/img cursor-pointer hover:opacity-80">
                                       {optImage ? <img src={optImage} className="w-full h-full object-cover" /> : <ImageIcon size={20} className="text-slate-400 m-auto mt-3"/>}
