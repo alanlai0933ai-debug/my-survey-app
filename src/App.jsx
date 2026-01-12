@@ -26,7 +26,8 @@ import {
   getStorage, 
   ref, 
   uploadBytes, 
-  getDownloadURL 
+  getDownloadURL,
+  deleteObject// 🔥 新增這個：用來刪除檔案
 } from 'firebase/storage';
 import { 
   BarChart, 
@@ -178,6 +179,19 @@ const uploadImageToStorage = (file) => {
     };
     reader.onerror = reject;
   });
+};
+// --- 🆕 新增：刪除 Storage 上的舊圖片 ---
+const deleteImageFromStorage = async (imageUrl) => {
+  if (!imageUrl) return;
+  try {
+    // Firebase 可以直接透過下載網址 (URL) 找到檔案位置並刪除
+    const fileRef = ref(storage, imageUrl);
+    await deleteObject(fileRef);
+    console.log("🗑️ 舊圖片已從雲端刪除");
+  } catch (error) {
+    // 如果檔案本來就不存在 (例如是預設圖片)，忽略錯誤
+    console.log("刪除舊圖略過:", error.code);
+  }
 };
 
 const isPointInPolygon = (point, vs) => {
@@ -475,25 +489,43 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
   };
 
   // 🛠️ 核心修改：圖片上傳改為「先傳雲端，再存網址」
+  // 🛠️ 核心修改：上傳新圖時，自動刪除舊圖
   const handleImageUpload = async (qIdx, file, field, optIdx = null) => {
     if (!file) return;
-    setUploading(true); // 鎖住按鈕
+    setUploading(true); 
+    
+    // 1. 先把舊圖片的網址存起來
+    let oldImageUrl = "";
+    if (optIdx !== null) {
+       oldImageUrl = questions[qIdx].options[optIdx].image;
+    } else {
+       // 如果是題目主圖 (image) 或其他欄位
+       oldImageUrl = field === 'image' ? questions[qIdx].image : questions[qIdx][field];
+    }
+
     try {
-      // 呼叫 Part 1 定義好的上傳工具
-      const imageUrl = await uploadImageToStorage(file);
+      // 2. 上傳新圖片
+      const newImageUrl = await uploadImageToStorage(file);
       
+      // 3. 更新資料狀態 (換成新圖片)
       const next = [...questions];
       if (optIdx !== null) {
-        next[qIdx].options[optIdx].image = imageUrl;
+        next[qIdx].options[optIdx].image = newImageUrl;
       } else {
-        next[qIdx].field = imageUrl; 
-        if(field === 'image') next[qIdx].image = imageUrl;
+        if(field === 'image') next[qIdx].image = newImageUrl;
+        else next[qIdx][field] = newImageUrl; // 兼容其他欄位
       }
       setQuestions(next);
+
+      // 4. 🔥 關鍵步驟：新圖上傳成功後，把舊圖刪掉 (節省空間)
+      if (oldImageUrl) {
+        await deleteImageFromStorage(oldImageUrl);
+      }
+
     } catch (e) { 
-      alert("圖片上傳失敗：" + e.message); 
+      alert("圖片上傳失敗：" + e.message);
     } finally {
-      setUploading(false); // 解鎖按鈕
+      setUploading(false); 
     }
   };
 
@@ -670,7 +702,12 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                             <div className="w-full h-full flex flex-col items-center justify-center text-slate-400"><Target size={40} className="mb-2"/>上傳圖片以開始</div>
                         )}
                         <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => handleImageUpload(qIdx, e.target.files[0], 'image')} disabled={!!q.image} />
-                        {q.image && <button onClick={(e) => { updateQuestion(qIdx, 'image', ''); }} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded hover:bg-red-500 z-10"><Trash2 size={14}/></button>}
+                        {q.image && <button onClick={async (e) => { 
+  // 1. 先刪除雲端檔案
+  await deleteImageFromStorage(q.image);
+  // 2. 再清空資料欄位
+  updateQuestion(qIdx, 'image', ''); 
+}} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded hover:bg-red-500 z-10"><Trash2 size={14}/></button>}
                       </div>
                       <div className="flex gap-4 items-center">
                         <button onClick={() => {
