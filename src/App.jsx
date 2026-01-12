@@ -1,3 +1,4 @@
+import ReactDOM from 'react-dom'
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -633,7 +634,24 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                   )}
 
                   {q.type === 'hotspot' && (
-                    <div className="space-y-4">
+                      <div className="space-y-4">
+                            {/* 🔥 新增：限制點擊數量的設定 🔥 */}
+                                <div className="flex items-center gap-4 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
+                                <div className="flex items-center gap-2">
+                                  <label className="text-sm font-bold text-slate-700">限制點擊數量：</label>
+                                    <input                                   
+          type="number" 
+          min="1" 
+          max="10"
+          className="w-20 p-2 border border-indigo-200 rounded-lg text-center font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500"
+          value={q.maxClicks || 1} // 預設為 1
+          onChange={e => updateQuestion(qIdx, 'maxClicks', Number(e.target.value))}
+        />
+      </div>
+      <span className="text-xs text-slate-400">
+        (例如：題目若問「找出 3 個垃圾」，請設為 3)
+      </span>
+    </div>
                       <div className="relative aspect-video bg-slate-100 rounded-xl overflow-hidden group border-2 border-dashed border-slate-300">
                         {q.image ? (
                             <HotspotAdminEditor image={q.image} targets={q.targets} onUpdate={(newTargets) => updateQuestion(qIdx, 'targets', newTargets)} />
@@ -1173,14 +1191,25 @@ function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting }) {
 function HotspotQuestion({ q, currentAnswer, onAnswer }) {
   const imgRef = useRef(null);
 
-  const handleClick = (e) => {
-    if (!imgRef.current) return;
-    const rect = imgRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    const newPin = { id: Date.now(), x, y };
-    onAnswer([...currentAnswer, newPin]);
-  };
+const handleClick = (e) => {
+  if (!imgRef.current) return;
+  const rect = imgRef.current.getBoundingClientRect();
+  const x = ((e.clientX - rect.left) / rect.width) * 100;
+  const y = ((e.clientY - rect.top) / rect.height) * 100;
+  const newPin = { id: Date.now(), x, y };
+
+  // 🔥 新增限制邏輯 🔥
+  const max = q.maxClicks || 1; // 如果沒設定，預設只能點 1 個
+  let nextAns = [...currentAnswer];
+
+  if (nextAns.length >= max) {
+    // 如果滿了，把「最舊的」那個移除 (Shift)
+    nextAns.shift();
+  }
+  
+  // 加入新的
+  onAnswer([...nextAns, newPin]);
+};
 
   const removePin = (e, id) => {
     e.stopPropagation();
@@ -1204,9 +1233,10 @@ function HotspotQuestion({ q, currentAnswer, onAnswer }) {
           </motion.div>
         ))}
       </div>
-      <div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-3 py-1 rounded-full backdrop-blur-md pointer-events-none">
-        點擊畫面標記目標 (點擊圖釘可移除)
-      </div>
+<div className="absolute bottom-4 left-4 bg-black/70 text-white text-xs px-3 py-1 rounded-full backdrop-blur-md pointer-events-none border border-white/20 shadow-lg">
+  {/* 顯示目前的標記進度 */}
+  標記進度：{currentAnswer.length} / {q.maxClicks || 1} (點擊畫面新增)
+</div>
     </div>
   );
 }
@@ -1283,49 +1313,89 @@ function SortingQuestion({ q, currentAnswer, onAnswer }) {
   );
 }
 function DraggableItem({ item, positions, onDrop, isSorted, isDragging, setDraggingId }) {
+  // 1. 新增控制放大的狀態
+  const [showZoom, setShowZoom] = useState(false);
+
   return (
-    <motion.div 
-      layout
-      initial={{ scale: 0.8, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0, opacity: 0 }} 
-      drag 
-      dragElastic={0.2}
-      whileDrag={{ scale: 1.1, cursor: 'grabbing' }}
-      dragMomentum={false}
-      onPointerDown={() => setDraggingId(item.id)} 
-      onPointerUp={() => setDraggingId(null)}
-      onDragEnd={(e, info) => {
-        setDraggingId(null);
-        const dropPoint = { x: e.clientX, y: e.clientY };
-        let matchedCategory = null;
-        Object.keys(positions).forEach(cat => {
-          const rect = positions[cat];
-          if (dropPoint.x >= rect.left && dropPoint.x <= rect.right &&
-              dropPoint.y >= rect.top && dropPoint.y <= rect.bottom) {
-            matchedCategory = cat;
-          }
-        });
-        onDrop(matchedCategory);
-      }}
-      className={`
-        ${isSorted ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'} 
-        rounded-lg shadow-sm border border-slate-200 cursor-grab font-bold 
-        flex flex-col items-center justify-center p-2 gap-1 select-none w-24
-      `}
-      style={{ zIndex: isDragging ? 9999 : 10 }} 
-    >
-      {item.image ? (
-        <div className="w-full h-16 rounded overflow-hidden bg-slate-100">
-          <img src={item.image} className="w-full h-full object-cover pointer-events-none"/>
-        </div>
-      ) : null}
-      <span className="text-xs truncate w-full text-center">{item.text}</span>
-    </motion.div>
+    <>
+      <motion.div 
+        layout
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0, opacity: 0 }} 
+        drag 
+        dragElastic={0.2}
+        whileDrag={{ scale: 1.1, cursor: 'grabbing' }}
+        dragMomentum={false}
+        onPointerDown={() => setDraggingId(item.id)} 
+        onPointerUp={() => setDraggingId(null)}
+        onDragEnd={(e, info) => {
+          setDraggingId(null);
+          const dropPoint = { x: e.clientX, y: e.clientY };
+          let matchedCategory = null;
+          Object.keys(positions).forEach(cat => {
+            const rect = positions[cat];
+            if (dropPoint.x >= rect.left && dropPoint.x <= rect.right &&
+                dropPoint.y >= rect.top && dropPoint.y <= rect.bottom) {
+              matchedCategory = cat;
+            }
+          });
+          onDrop(matchedCategory);
+        }}
+        className={`
+          ${isSorted ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600'} 
+          rounded-lg shadow-sm border border-slate-200 cursor-grab font-bold 
+          flex flex-col items-center justify-center p-2 gap-1 select-none w-24 relative group
+        `}
+        style={{ zIndex: isDragging ? 9999 : 10 }} 
+      >
+        {item.image ? (
+          <div className="w-full h-16 rounded overflow-hidden bg-slate-100 relative">
+            <img src={item.image} className="w-full h-full object-cover pointer-events-none"/>
+            
+            {/* 2. 新增放大鏡按鈕 (避免觸發拖曳，使用 stopPropagation) */}
+            <button 
+              className="absolute bottom-0 right-0 bg-black/60 text-white p-1 rounded-tl-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-indigo-600"
+              onPointerDown={(e) => {
+                e.stopPropagation(); // 防止觸發拖曳
+                setShowZoom(true);   // 開啟大圖
+              }}
+            >
+              <Maximize size={12} />
+            </button>
+          </div>
+        ) : null}
+        <span className="text-xs truncate w-full text-center">{item.text}</span>
+      </motion.div>
+
+      {/* 3. 全螢幕大圖 (使用 Portal 傳送到 body 層級，避免被拖曳卡片裁切) */}
+      {showZoom && ReactDOM.createPortal(
+        <div 
+          className="fixed inset-0 z-[10000] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={(e) => { e.stopPropagation(); setShowZoom(false); }}
+        >
+          <div className="relative max-w-4xl max-h-full animate-in fade-in zoom-in duration-300">
+            <img 
+              src={item.image} 
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border border-white/20" 
+              alt="Zoomed Preview"
+            />
+            <button 
+              onClick={() => setShowZoom(false)}
+              className="absolute -top-12 right-0 text-white hover:text-red-400 transition-colors bg-white/10 p-2 rounded-full"
+            >
+              <X size={24} />
+            </button>
+            <p className="text-white text-center mt-4 font-bold text-lg">{item.text}</p>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
-// --- 組件 4：ResultView ---
+// --- 組件 4：ResultView (修復顯示版) ---
 function ResultView({ quizData, userAnswers, stats, totalTime, onBack }) {
   const renderPolygon = (points) => {
     if (!points) return "";
@@ -1346,16 +1416,49 @@ function ResultView({ quizData, userAnswers, stats, totalTime, onBack }) {
 
     if (q.type === 'choice') {
       if (q.isMulti) {
+         // --- 複選題邏輯 (改為換行顯示) ---
          const correctOptions = q.options.filter(o => o.isCorrect).map(o => o.label);
          const userSelected = Array.isArray(userAns) ? userAns : [];
+         
+         // 判斷是否全對
          isCorrect = correctOptions.length === userSelected.length && correctOptions.every(v => userSelected.includes(v));
-         detail = `您的選擇: ${(userSelected || []).join(', ')}`;
+         
+         const userStr = userSelected.length > 0 ? userSelected.join('、') : '未作答';
+         
+         // 🔥 修改重點：將 detail 改成 JSX 物件，才能做排版
+         detail = (
+           <div className="flex flex-col gap-1 mt-1">
+             <div>您的選擇: {userStr}</div>
+             
+             {/* 分隔線 + 正確答案列表 */}
+             <div className="mt-1 pt-1 border-t border-current opacity-90">
+               <span className="block mb-1">正確答案：</span>
+               <ul className="list-none pl-2 m-0 space-y-1">
+                 {correctOptions.map((opt, i) => (
+                   <li key={i} className="flex items-start">
+                     <span className="mr-1.5">•</span>
+                     <span>{opt}</span>
+                   </li>
+                 ))}
+               </ul>
+             </div>
+           </div>
+         );
+
       } else {
+         // --- 單選題邏輯 (保持一行即可) ---
          const correctOption = q.options.find(o => o.isCorrect)?.label;
          isCorrect = userAns === correctOption;
-         detail = `您的答案: ${userAns} ${!isCorrect ? `(正確答案: ${correctOption || '未設定'})` : ''}`;
+         
+         // 單選題比較短，維持單行顯示較美觀
+         const userVal = (userAns === undefined || userAns === null) ? '未作答' : userAns;
+         const correctVal = correctOption || '未設定';
+         detail = `您的答案: ${userVal} (正確答案: ${correctVal})`;
       }
+      
       if (isCorrect) gainedPoints = points;
+    
+
     } else if (q.type === 'hotspot') {
       const targetHits = (q.targets || []).map(t => {
          const hit = (userAns || []).some(pin => isPointInPolygon(pin, t.points));
@@ -1366,6 +1469,7 @@ function ResultView({ quizData, userAnswers, stats, totalTime, onBack }) {
       isCorrect = hitCount === totalTargets && totalTargets > 0;
       gainedPoints = totalTargets > 0 ? Math.round((hitCount / totalTargets) * points) : 0;
       detail = `命中 ${hitCount} / ${totalTargets} 個目標`;
+
     } else if (q.type === 'sorting') {
       const userMap = userAns || {};
       let correctCount = 0;
@@ -1443,18 +1547,20 @@ function ResultView({ quizData, userAnswers, stats, totalTime, onBack }) {
               </div>
             </div>
             
-            {/* 熱點題視覺化 (2. 渲染保護) */}
+            {/* 熱點題視覺化 */}
             {r.type === 'hotspot' && r.image && (
               <div className="relative aspect-video bg-slate-100 rounded-lg overflow-hidden mt-2 border-2 border-slate-200 mb-2">
-                <img src={r.image} className="w-full h-full object-contain opacity-60" />
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <ZoomableImage 
+                  src={r.image} 
+                  alt="題目圖片"
+                  markers={r.userAns || []} 
+                  onClick={() => {}} 
+                />
+                <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
                   {r.targets?.map((t, i) => (
                     <polygon key={i} points={renderPolygon(t.points)} fill="rgba(34, 197, 94, 0.4)" stroke="#22c55e" strokeWidth="1" vectorEffect="non-scaling-stroke"/>
                   ))}
                 </svg>
-                {r.userAns?.map((p, i) => (
-                  <div key={i} className="absolute w-3 h-3 bg-red-600 border-2 border-white rounded-full shadow-sm" style={{ left: `${p.x}%`, top: `${p.y}%`, transform: 'translate(-50%, -50%)' }} />
-                ))}
               </div>
             )}
 
@@ -1466,13 +1572,14 @@ function ResultView({ quizData, userAnswers, stats, totalTime, onBack }) {
               </div>
             )}
             
-            {/* 選擇題錯誤顯示 */}
-            {r.type === 'choice' && !r.isCorrect && (
-               <div className="text-sm font-bold text-red-500 mt-1">
+            {/* 🔥 選擇題顯示 (這裡就是您問題的核心) 🔥 */}
+            {r.type === 'choice' && (
+               <div className={`text-sm font-bold mt-1 ${r.isCorrect ? 'text-indigo-600' : 'text-red-500'}`}>
                  {r.detail}
                </div>
             )}
             
+            {/* 其他題型顯示 */}
             {r.type !== 'choice' && <p className="text-sm text-slate-500 mt-1">{r.detail}</p>}
           </div>
         ))}
@@ -1549,6 +1656,60 @@ function StatsDashboard({ quizData, responses }) {
     });
   }, [quizData, responses]);
 
+  // --- 新增：計算易錯題排行榜 (Top 5) ---
+  const topWrongQuestions = useMemo(() => {
+    if (responses.length === 0) return [];
+
+    const calculated = quizData.questions
+    .filter(q => Number(q.points) > 0)
+    .map(q => {
+      let totalAccuracy = 0; // 累積所有人的正確率 (0~1)
+      
+      responses.forEach(r => {
+        const ans = r.answers[q.id];
+        let accuracy = 0; // 該使用者的該題正確率
+
+        if (q.type === 'choice') {
+          // 選擇題：全對才算 1，否則 0
+          if (q.isMulti) {
+            const correctOptions = q.options.filter(o => o.isCorrect).map(o => o.label);
+            const userSelected = Array.isArray(ans) ? ans : [];
+            const isCorrect = correctOptions.length === userSelected.length && correctOptions.every(v => userSelected.includes(v));
+            accuracy = isCorrect ? 1 : 0;
+          } else {
+            const correctOption = q.options.find(o => o.isCorrect)?.label;
+            accuracy = ans === correctOption ? 1 : 0;
+          }
+        } else if (q.type === 'hotspot') {
+          // 熱點題：(命中數 / 總目標數)
+          const totalTargets = q.targets?.length || 1;
+          const hits = (q.targets || []).filter(t => (ans || []).some(pin => isPointInPolygon(pin, t.points))).length;
+          accuracy = hits / totalTargets;
+        } else if (q.type === 'sorting') {
+          // 分類題：(分類正確數 / 總項目數)
+          const totalItems = q.items.length || 1;
+          let correct = 0;
+          q.items.forEach(i => { if (ans && ans[i.id] === i.correctCategory) correct++; });
+          accuracy = correct / totalItems;
+        }
+
+        totalAccuracy += accuracy;
+      });
+
+      // 平均錯誤率 = 100% - (平均正確率 %)
+      const avgAccuracy = totalAccuracy / responses.length;
+      return {
+        id: q.id,
+        text: q.text,
+        type: q.type,
+        errorRate: Math.round((1 - avgAccuracy) * 100)
+      };
+    });
+
+    // 排序：錯誤率由高到低，取前 5 名
+    return calculated.sort((a, b) => b.errorRate - a.errorRate).slice(0, 10);
+  }, [quizData, responses]);
+
   const selectedUserData = responses.find(r => r.id === selectedUser);
 
   if (responses.length === 0) return <div className="p-20 text-center bg-white rounded-3xl shadow text-slate-400">尚無數據，請先進行挑戰</div>;
@@ -1592,54 +1753,96 @@ function StatsDashboard({ quizData, responses }) {
            </div>
            <ResultView quizData={quizData} userAnswers={selectedUserData.answers} stats={selectedUserData.stats} totalTime={selectedUserData.totalTime} onBack={() => setSelectedUser("all")} />
         </div>
+// ... (上接 StatsDashboard 的內容)
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 print:block print:space-y-8">
-          {stats.map((s, i) => (
-            <div key={i} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow break-inside-avoid">
-              <h4 className="font-bold text-lg mb-8 border-l-4 border-indigo-500 pl-4 text-slate-700">{s.title}</h4>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  {s.type === 'hotspot' ? (
-                    <PieChart>
-                      <Pie data={s.data} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                        <Cell fill="#10B981" /> 
-                        <Cell fill="#EF4444" /> 
-                      </Pie>
-                      <RechartsTooltip />
-                      <Legend />
-                    </PieChart>
-                  ) : s.type === 'sorting' ? (
-                    <BarChart data={s.data} layout="vertical" margin={{ left: 40 }}>
-                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
-                      <XAxis type="number" />
-                      <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 10}} />
-                      <RechartsTooltip />
-                      <Legend />
-                      <Bar dataKey="correct" name="正確歸類" stackId="a" fill="#10B981" />
-                      <Bar dataKey="wrong" name="歸類錯誤" stackId="a" fill="#EF4444" />
-                    </BarChart>
-                  ) : (
-                    <BarChart data={s.data} layout="vertical" margin={{ left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9"/>
-                      <XAxis type="number" hide />
-                      <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12, fill: '#64748b'}} />
-                      <RechartsTooltip cursor={{fill: '#f8fafc'}} />
-                      <Bar dataKey="value" fill="#6366f1" radius={[0, 6, 6, 0]} barSize={20}>
-                        {s.data.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
+        <div className="space-y-8">
+          
+          {/* 🔥 Part 1: 新增的易錯題排行榜 (放在最上面) 🔥 */}
+          {topWrongQuestions.length > 0 && (
+            <div className="bg-white p-6 rounded-3xl shadow-lg border border-red-100">
+              <h3 className="text-xl font-bold text-red-600 mb-4 flex items-center gap-2">
+                <AlertCircle className="fill-red-100"/> 
+                易錯題排行榜 (Top 10)
+              </h3>
+              <div className="grid gap-4">
+                {topWrongQuestions.map((q, idx) => (
+                  <div key={q.id} className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                    <div className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-full font-bold text-lg ${idx === 0 ? 'bg-red-500 text-white shadow-red-200 shadow-lg' : 'bg-white text-slate-500 border'}`}>
+                      {idx + 1}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex justify-between mb-1">
+                        <span className="font-bold text-slate-700 truncate max-w-[200px] md:max-w-md">{q.text}</span>
+                        <span className="font-bold text-red-500">{q.errorRate}% 錯誤率</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-red-500 rounded-full transition-all duration-1000" 
+                          style={{ width: `${q.errorRate}%` }} 
+                        />
+                      </div>
+                    </div>
+                    <span className="text-xs px-2 py-1 bg-white border rounded text-slate-400 font-medium hidden md:block">
+                      {q.type === 'hotspot' ? '熱點' : q.type === 'sorting' ? '分類' : '選擇'}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          )}
+
+          {/* 🔥 Part 2: 原本的圖表 Grid (被擠到下面) 🔥 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 print:block print:space-y-8">
+            {stats.map((s, i) => (
+              <div key={i} className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow break-inside-avoid">
+                <h4 className="font-bold text-lg mb-8 border-l-4 border-indigo-500 pl-4 text-slate-700">{s.title}</h4>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    {s.type === 'hotspot' ? (
+                      <PieChart>
+                        <Pie data={s.data} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                          <Cell fill="#10B981" /> 
+                          <Cell fill="#EF4444" /> 
+                        </Pie>
+                        <RechartsTooltip />
+                        <Legend />
+                      </PieChart>
+                    ) : s.type === 'sorting' ? (
+                      <BarChart data={s.data} layout="vertical" margin={{ left: 40 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                        <XAxis type="number" />
+                        <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 10}} />
+                        <RechartsTooltip />
+                        <Legend />
+                        <Bar dataKey="correct" name="正確歸類" stackId="a" fill="#10B981" />
+                        <Bar dataKey="wrong" name="歸類錯誤" stackId="a" fill="#EF4444" />
+                      </BarChart>
+                    ) : (
+                      <BarChart data={s.data} layout="vertical" margin={{ left: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9"/>
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12, fill: '#64748b'}} />
+                        <RechartsTooltip cursor={{fill: '#f8fafc'}} />
+                        <Bar dataKey="value" fill="#6366f1" radius={[0, 6, 6, 0]} barSize={20}>
+                          {s.data.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
+
+    {/* 👇👇👇 重點修正：這裡原本缺了這兩行 👇👇👇 */}
     </div>
   );
 }
+// 👆👆👆 修正結束，以下接著 HomeView 👆👆👆
 
 function HomeView({ quizTitle, responseCount, onNavigate, isAdmin }) {
   return (
@@ -1693,3 +1896,63 @@ function AdminAuthWrapper({ children, onCancel, user }) {
   }
   return children;
 }
+// ==========================================
+// 補上：放大鏡圖片元件 (請貼在檔案最下方)
+// ==========================================
+const ZoomableImage = ({ src, alt, onClick, markers = [] }) => {
+  const [showMagnifier, setShowMagnifier] = React.useState(false);
+  const [cursorPosition, setCursorPosition] = React.useState({ x: 0, y: 0 });
+  const [imgSize, setImgSize] = React.useState({ width: 0, height: 0 });
+
+  // 處理滑鼠/手指移動
+  const handleMouseMove = (e) => {
+    const { top, left, width, height } = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - left;
+    const y = e.clientY - top;
+    setImgSize({ width, height });
+    setCursorPosition({ x, y });
+    setShowMagnifier(true);
+  };
+
+  return (
+    <div 
+      className="relative overflow-hidden rounded-xl shadow-lg cursor-crosshair group"
+      onMouseEnter={() => setShowMagnifier(true)}
+      onMouseLeave={() => setShowMagnifier(false)}
+      onMouseMove={handleMouseMove}
+      onClick={onClick} 
+    >
+      {/* 原始圖片 */}
+      <img 
+        src={src} 
+        alt={alt} 
+        className="w-full h-auto object-cover pointer-events-none" 
+      />
+
+      {/* 顯示已經標記的點 (綠色圓點) */}
+      {markers.map((mark, index) => (
+        <div
+          key={index}
+          className="absolute w-4 h-4 bg-green-500 rounded-full border-2 border-white transform -translate-x-1/2 -translate-y-1/2 shadow-sm"
+          style={{ left: `${mark.x}%`, top: `${mark.y}%` }}
+        />
+      ))}
+
+      {/* 放大鏡鏡頭 */}
+      {showMagnifier && (
+        <div 
+          className="absolute pointer-events-none border-2 border-white rounded-full shadow-2xl z-50 bg-no-repeat bg-white"
+          style={{
+            height: "150px", 
+            width: "150px",
+            top: `${cursorPosition.y - 75}px`, 
+            left: `${cursorPosition.x - 75}px`,
+            backgroundImage: `url('${src}')`,
+            backgroundSize: `${imgSize.width * 2.5}px ${imgSize.height * 2.5}px`, 
+            backgroundPosition: `${-cursorPosition.x * 2.5 + 75}px ${-cursorPosition.y * 2.5 + 75}px`
+          }}
+        />
+      )}
+    </div>
+  );
+};
