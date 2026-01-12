@@ -582,13 +582,24 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                       <span className="text-xs font-bold uppercase bg-slate-100 text-slate-500 px-2 py-1 rounded">{q.type}</span>
                       <button className="text-slate-300 hover:text-red-500 transition-colors p-1 bg-white rounded-full shadow-sm" onClick={() => setQuestions(questions.filter((_, i) => i !== qIdx))}><Trash2 size={20}/></button>
                   </div>
-                  <div className="flex gap-4">
-                    <input className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-indigo-100 outline-none" value={q.text} onChange={e => updateQuestion(qIdx, 'text', e.target.value)} placeholder="題目描述..." />
-                    <div className="w-24">
-                        <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">配分</label>
-                        <input type="number" className="w-full p-2 border rounded-lg font-bold text-center" value={q.points || 0} onChange={e => updateQuestion(qIdx, 'points', Number(e.target.value))} />
-                    </div>
-                  </div>
+   <div className="flex flex-col gap-3">
+  {/* 第一排：標題 + 配分 */}
+  <div className="flex gap-4">
+    <input className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-indigo-100 outline-none" value={q.text} onChange={e => updateQuestion(qIdx, 'text', e.target.value)} placeholder="題目描述..." />
+    <div className="w-24">
+       <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">配分</label>
+       <input type="number" className="w-full p-2 border rounded-lg font-bold text-center" value={q.points || 0} onChange={e => updateQuestion(qIdx, 'points', Number(e.target.value))} />
+    </div>
+  </div>
+  
+  {/* 🔥 第二排：新增備註輸入框 🔥 */}
+  <input 
+    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 focus:ring-2 focus:ring-indigo-100 outline-none" 
+    value={q.note || ''} 
+    onChange={e => updateQuestion(qIdx, 'note', e.target.value)} 
+    placeholder="在此輸入補充說明文字 (例如：請依照大小順序排列)..." 
+  />
+</div>
 
                   {q.type === 'choice' && (
                     <div className="space-y-4">
@@ -1103,10 +1114,21 @@ function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting }) {
             className="bg-white p-8 rounded-3xl shadow-2xl shadow-indigo-100 border border-white relative z-10"
           >
             <span className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-xs font-bold mb-4 uppercase tracking-widest">Challenge #{currentQ + 1}</span>
-            <h3 className="text-2xl font-bold mb-8 text-slate-800 leading-relaxed">
-              {q.text} 
-              {q.isMulti && <span className="text-sm font-normal text-slate-500 ml-2">(可複選)</span>}
-            </h3>
+<div className="mb-8">
+  <h3 className="text-2xl font-bold text-slate-800 leading-relaxed mb-2">
+    {q.text} 
+    {q.isMulti && <span className="text-sm font-normal text-slate-500 ml-2">(可複選)</span>}
+  </h3>
+  
+  {/* 🔥 新增：顯示備註文字 (如果後台有填寫的話) 🔥 */}
+  {q.note && (
+    <div className="inline-block bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
+      <p className="text-slate-500 text-sm font-medium flex items-center gap-2">
+        💡 {q.note}
+      </p>
+    </div>
+  )}
+</div>
 
             {q.type === 'choice' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
