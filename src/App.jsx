@@ -120,11 +120,9 @@ const QUIZ_ID = 'global_shared_quiz_v2';
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 const ADMIN_EMAILS = ["alanlai0933.ai@gmail.com", "alanlai0933@gmail.com"];
 
-// --- 2. 輔助函數 (超級上傳小幫手) ---
-// 這個函式會做三件事：1.壓縮圖片 2.上傳到雲端 3.拿回網址
+// --- 2. 輔助函數 (升級：高畫質雲端上傳版) ---
 const uploadImageToStorage = (file) => {
   return new Promise((resolve, reject) => {
-    // 1. 先用 Canvas 壓縮圖片
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = (e) => {
@@ -132,36 +130,48 @@ const uploadImageToStorage = (file) => {
       img.src = e.target.result;
       img.onload = async () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // 即使上傳雲端，我們還是稍微壓一下，節省流量
-        const scale = MAX_WIDTH / img.width;
-        canvas.width = MAX_WIDTH;
-        canvas.height = img.height * scale;
+        
+        // 🟢 修改 1：將最大寬度提升到 1280 (HD 畫質)
+        // 這樣在手機或電腦上觀看都非常清晰，不會有馬賽克
+        const MAX_WIDTH = 1280; 
+        
+        let width = img.width;
+        let height = img.height;
+
+        // 只有當圖片「超過」1280 時才縮小，不然保持原樣
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
         
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, width, height);
         
-        // 轉成 Blob (二進位檔案)，準備上傳
+        // 🟢 修改 2：品質提升到 0.9 (接近原圖畫質)
         canvas.toBlob(async (blob) => {
           if (!blob) {
             reject(new Error("圖片處理失敗"));
             return;
           }
           try {
-            // 2. 設定上傳路徑：images/時間戳記_檔名
+            // 設定上傳路徑
             const fileName = `images/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
             const storageRef = ref(storage, fileName);
             
-            // 3. 開始上傳
+            // 開始上傳
             await uploadBytes(storageRef, blob);
             
-            // 4. 拿到下載網址 (這就是我們要存進資料庫的短短字串)
+            // 拿到下載網址
             const downloadURL = await getDownloadURL(storageRef);
             resolve(downloadURL);
           } catch (error) {
             console.error("上傳失敗:", error);
             reject(error);
           }
-        }, 'image/jpeg', 0.8);
+        }, 'image/jpeg', 0.9); // <--- 這裡改成了 0.9
       };
       img.onerror = reject;
     };
