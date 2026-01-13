@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 // ✅ 引入我們拆分出去的工具
 import { uploadImageToStorage, deleteImageFromStorage } from '../utils/imageHelpers';
+// ✅ 引入新的混合版編輯器
 import HotspotAdminEditor from '../components/HotspotAdminEditor';
 
 function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResponse }) {
@@ -28,13 +29,13 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
         options: [{ label: "選項 A", image: "", isCorrect: false }, { label: "選項 B", image: "", isCorrect: false }]
       }]);
     } else if (type === 'hotspot') {
-      const defaultPoints = [{ x: 30, y: 30 }, { x: 70, y: 30 }, { x: 70, y: 70 }, { x: 30, y: 70 }];
-      setQuestions([...questions, { ...base, text: "請框出畫面中的...", image: "", targets: [{ id: 't1', points: defaultPoints }] }]);
+      // 預設不給 targets，讓使用者自己畫
+      setQuestions([...questions, { ...base, text: "請框出畫面中的...", image: "", targets: [] }]);
     } else if (type === 'sorting') {
       setQuestions([...questions, { 
         ...base, 
         text: "請分類以下項目", 
-        items: [{ id: 'i1', text: "項目 1", image: "", correctCategory: "" }, { id: 'i2', text: "項目 2", image: "", correctCategory: "" }], 
+        items: [{ id: 'i1', text: "項目 1", image: "", correctCategory: "分類 A" }, { id: 'i2', text: "項目 2", image: "", correctCategory: "分類 B" }], 
         categories: ["分類 A", "分類 B"] 
       }]);
     }
@@ -52,6 +53,7 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
     setUploading(true); 
     
     let oldImageUrl = "";
+    // 取得舊圖 URL 以便稍後刪除
     if (optIdx !== null) {
        oldImageUrl = questions[qIdx].options[optIdx].image;
     } else {
@@ -61,6 +63,8 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
     try {
       const newImageUrl = await uploadImageToStorage(file);
       const next = [...questions];
+      
+      // 更新 State
       if (optIdx !== null) {
         next[qIdx].options[optIdx].image = newImageUrl;
       } else {
@@ -69,6 +73,7 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
       }
       setQuestions(next);
 
+      // 刪除舊圖 (清理垃圾)
       if (oldImageUrl) {
         await deleteImageFromStorage(oldImageUrl);
       }
@@ -82,12 +87,14 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
 
   const handleOptionUpdate = (qIdx, optIdx, field, val) => {
     const next = [...questions];
+    // 防呆：確保 options 是物件結構
     if (typeof next[qIdx].options[optIdx] === 'string') {
         next[qIdx].options[optIdx] = { label: val, image: "", isCorrect: false };
     } else {
         next[qIdx].options[optIdx][field] = val;
     }
     
+    // 如果是單選題且設為正確，把其他選項改為錯誤
     if (field === 'isCorrect' && val === true && !next[qIdx].isMulti) {
         next[qIdx].options.forEach((o, i) => {
             if (i !== optIdx) o.isCorrect = false;
@@ -108,6 +115,11 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
     try {
       const imageUrl = await uploadImageToStorage(file);
       const next = [...questions];
+      
+      // 刪除舊圖邏輯
+      const oldUrl = next[qIdx].items[itemIdx].image;
+      if(oldUrl) await deleteImageFromStorage(oldUrl);
+
       next[qIdx].items[itemIdx].image = imageUrl;
       setQuestions(next);
     } catch (e) { 
@@ -195,14 +207,13 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                              return (
                                <div key={oIdx} className={`flex items-start gap-2 border p-2 rounded-lg ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-slate-50'}`}>
                                  <div className="mt-3">
-                                   {/* 🟢 使用優化過的打勾按鈕 */}
                                    <div 
                                       onClick={() => handleOptionUpdate(qIdx, oIdx, 'isCorrect', !isCorrect)}
                                       className={`w-6 h-6 cursor-pointer flex items-center justify-center border-2 transition-all ${q.isMulti ? 'rounded-md' : 'rounded-full'} ${isCorrect ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300 hover:border-green-400'}`}
                                       title={isCorrect ? "點擊取消正確答案" : "設為正確答案"}
-                                   >
-                                      {isCorrect && <CheckCircle size={14} className="text-white" />}
-                                   </div>
+                                     >
+                                        {isCorrect && <CheckCircle size={14} className="text-white" />}
+                                     </div>
                                  </div>
                                  <div className="w-12 h-12 bg-slate-200 rounded flex-shrink-0 relative overflow-hidden group/img cursor-pointer hover:opacity-80">
                                       {optImage ? <img src={optImage} className="w-full h-full object-cover" alt="opt" /> : <ImageIcon size={20} className="text-slate-400 m-auto mt-3"/>}
@@ -240,23 +251,37 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                         </div>
                       <div className="relative aspect-video bg-slate-100 rounded-xl overflow-hidden group border-2 border-dashed border-slate-300">
                         {q.image ? (
-                            <HotspotAdminEditor image={q.image} targets={q.targets} onUpdate={(newTargets) => updateQuestion(qIdx, 'targets', newTargets)} />
+                            // 🔥 [關鍵修正]：Props 名稱對接新版編輯器
+                            <HotspotAdminEditor 
+                                imageUrl={q.image} 
+                                targets={q.targets || []} 
+                                onChange={(newTargets) => updateQuestion(qIdx, 'targets', newTargets)} 
+                            />
                         ) : (
                             <div className="w-full h-full flex flex-col items-center justify-center text-slate-400"><Target size={40} className="mb-2"/>上傳圖片以開始</div>
                         )}
-                        <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => handleImageUpload(qIdx, e.target.files[0], 'image')} disabled={!!q.image} />
+                        
+                        {/* 圖片上傳按鈕 (如果已有圖片則隱藏上傳區，避免誤觸) */}
+                        {!q.image && (
+                           <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => handleImageUpload(qIdx, e.target.files[0], 'image')} />
+                        )}
+
                         {q.image && <button onClick={async (e) => { 
-                          await deleteImageFromStorage(q.image);
-                          updateQuestion(qIdx, 'image', ''); 
+                          if(window.confirm('確定要刪除此圖片並重設熱點嗎？')) {
+                             await deleteImageFromStorage(q.image);
+                             // 刪除圖片時，同時清空已畫的 targets
+                             const next = [...questions];
+                             next[qIdx].image = '';
+                             next[qIdx].targets = [];
+                             setQuestions(next);
+                          }
                         }} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded hover:bg-red-500 z-10"><Trash2 size={14}/></button>}
                       </div>
-                      <div className="flex gap-4 items-center">
-                        <button onClick={() => {
-                            const defaultPoints = [{ x: 30, y: 30 }, { x: 70, y: 30 }, { x: 70, y: 70 }, { x: 30, y: 70 }];
-                            const newTargets = [...(q.targets || []), { id: Date.now().toString(), points: defaultPoints }];
-                            updateQuestion(qIdx, 'targets', newTargets);
-                        }} className="text-xs bg-indigo-100 text-indigo-600 px-3 py-1 rounded font-bold hover:bg-indigo-200">+ 新增判定區</button>
-                        <span className="text-xs text-slate-400">目前有 {q.targets?.length || 0} 個判定區</span>
+                      
+                      {/* 下方提示列 */}
+                      <div className="flex justify-between items-center text-xs text-slate-400">
+                         <span>目前有 {q.targets?.length || 0} 個判定區</span>
+                         <span>💡 點擊畫面新增區域，拖曳綠點調整</span>
                       </div>
                     </div>
                   )}

@@ -1,20 +1,25 @@
 import React, { useState, useMemo } from 'react';
-import { isPointInPolygon, exportToCSV } from '../utils/mathHelpers'; // 注意：回到上一層抓 utils
-import ResultView from './ResultView'; // 引用同層的 ResultView
+import { isPointInPolygon, exportToCSV } from '../utils/mathHelpers';
+import ResultView from './ResultView'; 
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, 
   ResponsiveContainer, PieChart, Pie, Cell, Legend 
 } from 'recharts';
 import { BarChart3, Search, Download, User, AlertCircle } from 'lucide-react';
 
-// 🎨 補上原本定義在 main.jsx 頂端的顏色變數
+// ✅ 1. 引入我們剛做好的骨架組件 (視覺優化)
+import Skeleton, { SkeletonCard } from '../components/Skeleton';
+
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
-// 👇 關鍵修正：這裡加上了 "export default"
 export default function StatsDashboard({ quizData, responses }) {
   const [selectedUser, setSelectedUser] = useState("all");
 
+  // 統計邏輯計算 (維持不變)
   const stats = useMemo(() => {
+    // 防呆：如果還沒載入題目，就回傳空陣列
+    if (!quizData || !quizData.questions) return [];
+
     return quizData.questions.map(q => {
       if (q.type === 'hotspot') {
         let pass = 0;
@@ -76,7 +81,8 @@ export default function StatsDashboard({ quizData, responses }) {
   }, [quizData, responses]);
 
   const topWrongQuestions = useMemo(() => {
-    if (responses.length === 0) return [];
+    if (!quizData || !quizData.questions || responses.length === 0) return [];
+    
     const calculated = quizData.questions
     .filter(q => Number(q.points) > 0)
     .map(q => {
@@ -119,6 +125,35 @@ export default function StatsDashboard({ quizData, responses }) {
 
   const selectedUserData = responses.find(r => r.id === selectedUser);
 
+  // ✅ 2. 插入 Loading 狀態檢查
+  // 如果題目還沒載入完成，顯示骨架屏
+  if (!quizData || !quizData.questions || quizData.questions.length === 0) {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-500">
+         {/* 模擬頂部 Header */}
+         <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+             <div className="flex items-center gap-2">
+                 <Skeleton className="h-8 w-8 rounded-full" />
+                 <Skeleton className="h-8 w-48" />
+             </div>
+             <div className="flex gap-3 w-full md:w-auto">
+                 <Skeleton className="h-10 w-full md:w-40 rounded-xl" />
+                 <Skeleton className="h-10 w-32 rounded-xl" />
+             </div>
+         </div>
+         
+         {/* 模擬下方卡片 Grid */}
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+         </div>
+      </div>
+    );
+  }
+
+  // 如果資料載入完成，但沒有任何回應紀錄
   if (responses.length === 0) return <div className="p-20 text-center bg-white rounded-3xl shadow text-slate-400">尚無數據，請先進行挑戰</div>;
 
   return (

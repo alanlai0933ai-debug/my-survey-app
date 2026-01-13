@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react'; // 1. 補上 useEffect
+import confetti from 'canvas-confetti'; // 2. 引入特效套件
 import { Clock, RefreshCw } from 'lucide-react';
 // ✅ 這裡已經正確引入了 isPointInPolygon，下面直接用就好，不需要 require
 import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
@@ -103,6 +104,37 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
     totalScore += gainedPoints;
     return { ...q, isCorrect, detail, userAns, gainedPoints, sortingErrors };
   });
+
+  // 3. 加入勝利特效邏輯 (useEffect)
+  useEffect(() => {
+    // 設定及格分數 (例如總分的 60%)
+    const passingScore = maxScore * 0.6;
+    
+    // 如果及格且總分大於 0，就噴發紙屑
+    if (totalScore >= passingScore && maxScore > 0) {
+      const duration = 3 * 1000;
+      const animationEnd = Date.now() + duration;
+      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+      const randomInRange = (min, max) => Math.random() * (max - min) + min;
+
+      const interval = setInterval(function() {
+        const timeLeft = animationEnd - Date.now();
+
+        if (timeLeft <= 0) {
+          return clearInterval(interval);
+        }
+
+        const particleCount = 50 * (timeLeft / duration);
+        // 從左邊噴射
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+        // 從右邊噴射
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+      }, 250);
+      
+      return () => clearInterval(interval); // 清除計時器，避免組件卸載後還在噴
+    }
+  }, [totalScore, maxScore]);
 
   return (
     <div className="max-w-4xl mx-auto bg-white p-8 rounded-3xl shadow-xl border border-slate-100 flex flex-col md:flex-row gap-8">

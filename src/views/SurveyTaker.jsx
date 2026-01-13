@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronLeft, ChevronRight, Target, Zap } from 'lucide-react';
-import { isPointInPolygon, formatTime } from '../utils/mathHelpers'; // 修正路徑
+import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 
-// 引入剛做好的子組件
+// 引入子組件
 import HotspotQuestion from '../components/HotspotQuestion';
 import SortingQuestion from '../components/SortingQuestion';
 
@@ -21,9 +21,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
   const [times, setTimes] = useState({});
   const [interactionCount, setInteractionCount] = useState(0);
 
-  // ... (保留原本的邏輯代碼，這裡篇幅有限，請將原本 SurveyTaker 的所有內部邏輯完整貼過來)
-  // 為了方便您，我將關鍵邏輯縮寫，您搬運時請直接複製原檔的 function body
-  
   // 🔴 載入中防呆
   if (!quizData || !quizData.questions || quizData.questions.length === 0) {
     return (
@@ -35,7 +32,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     );
   }
 
-  // Effect 區塊 (Timer, StartTime 等)
+  // Timer Effect
   useEffect(() => {
     let interval;
     if (isStarted) {
@@ -178,8 +175,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
   const q = quizData.questions[currentQ];
   const progress = ((currentQ + 1) / quizData.questions.length) * 100;
 
-  // Render 主要畫面 (海浪進度條 + 題目卡片 + 統計側欄)
-  // ... (請將原始 SurveyTaker 的 return 部分，行號 76-100 完整貼入)
   return (
     <div className="flex flex-col lg:flex-row gap-8 h-full items-start" ref={containerRef}>
       <div className="flex-1 w-full max-w-2xl mx-auto">
@@ -198,18 +193,51 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
           </div>
         </div>
 
-        {/* 進度條區域 (省略重複代碼，請複製原檔 79-82 行) */}
+        {/* 🌊 海浪感進度條 (小海龜回歸版) 🌊 */}
         <div className="relative mb-8 mt-4">
-           {/* ...複製海浪進度條... */}
-            <div className="h-5 bg-blue-50/50 rounded-full overflow-hidden shadow-inner border border-blue-100 relative backdrop-blur-sm">
+           {/* 1. 軌道背景 */}
+           <div className="h-5 bg-blue-50/50 rounded-full overflow-hidden shadow-inner border border-blue-100 relative backdrop-blur-sm">
+                {/* 2. 藍色水流本體 */}
                 <motion.div 
                 className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 relative overflow-hidden"
                 initial={{ width: 0 }} 
                 animate={{ width: `${progress}%` }} 
                 transition={{ type: "spring", stiffness: 35, damping: 12 }}
-                />
-            </div>
-            {/* ...複製海龜... */}
+                >
+                    {/* 🌊 水紋特效：使用斜向條紋模擬水流 */}
+                    <motion.div 
+                    className="absolute inset-0 w-full h-full opacity-20"
+                    style={{ 
+                        backgroundImage: 'linear-gradient(45deg,rgba(255,255,255,.3) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.3) 50%,rgba(255,255,255,.3) 75%,transparent 75%,transparent)', 
+                        backgroundSize: '1rem 1rem' 
+                    }}
+                    animate={{ backgroundPosition: ["0rem 0rem", "1rem 0rem"] }}
+                    transition={{ repeat: Infinity, ease: "linear", duration: 1 }}
+                    />
+                    
+                    {/* 🫧 浪花氣泡：模擬前端的泡沫 */}
+                    <div className="absolute right-1 top-1 w-1.5 h-1.5 bg-white/60 rounded-full animate-ping" />
+                    <div className="absolute right-3 bottom-1 w-1 h-1 bg-white/40 rounded-full animate-pulse" />
+                </motion.div>
+           </div>
+
+           {/* 3. 🐢 海龜領航員 (跟隨進度) */}
+           <motion.div 
+            className="absolute top-1/2 -translate-y-1/2 z-10"
+            initial={{ left: 0 }}
+            animate={{ left: `${progress}%` }}
+            transition={{ type: "spring", stiffness: 35, damping: 12 }} 
+            style={{ marginLeft: '-14px' }} // 校正位置，讓海龜剛好在線頭
+           >
+             <div className="relative group cursor-pointer">
+                {/* 發光光暈 */}
+                <div className="absolute -inset-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-30 blur transition-opacity"></div>
+                {/* 圖示本體 */}
+                <div className="bg-white p-1 rounded-full shadow-lg border-2 border-blue-200 flex items-center justify-center w-9 h-9 relative transform -rotate-6 hover:rotate-0 transition-transform">
+                   <span className="text-lg">🐢</span> 
+                </div>
+             </div>
+           </motion.div>
         </div>
 
         <AnimatePresence mode="wait">
