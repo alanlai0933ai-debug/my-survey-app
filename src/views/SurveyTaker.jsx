@@ -1,6 +1,7 @@
+// src/views/SurveyTaker.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronRight, Target, Zap, Trophy, XCircle, AlertCircle, BookmarkCheck } from 'lucide-react';
+import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronRight, Target, Zap, Trophy, XCircle, AlertCircle, BookmarkCheck, Flame } from 'lucide-react';
 import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import useSound from 'use-sound';
@@ -10,7 +11,6 @@ import HotspotQuestion from '../components/HotspotQuestion';
 import SortingQuestion from '../components/SortingQuestion';
 
 export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting }) {
-  // 1. 所有 Hooks 必須放在最上面
   const [answers, setAnswers] = useState({});
   const [currentQ, setCurrentQ] = useState(0); 
   const containerRef = useRef(null); 
@@ -26,12 +26,28 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
 
   // 控制是否顯示即時回饋 (詳解模式)
   const [showFeedback, setShowFeedback] = useState(false);
-  const [isCurrentCorrect, setIsCurrentCorrect] = useState(false); // 這一題答對了嗎？
+  const [isCurrentCorrect, setIsCurrentCorrect] = useState(false); 
+
+  // 🔥 新增：Combo 連擊狀態
+  const [combo, setCombo] = useState(0);
 
   // 音效
   const [playClick] = useSound('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3', { volume: 0.5 });
   const [playCorrect] = useSound('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3', { volume: 0.5 });
   const [playWrong] = useSound('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3', { volume: 0.5 });
+  // 🌟 Combo 音效 (可選，這裡先用正確音效代替，您也可以找更熱血的音效)
+  const [playCombo] = useSound('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3', { volume: 0.4 }); 
+
+  // 🔴 載入中防呆
+  if (!quizData || !quizData.questions || quizData.questions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-slate-400">
+        <Loader2 className="animate-spin mb-2" size={32}/>
+        <p>正在載入挑戰內容，請稍候...</p>
+        <button onClick={onCancel} className="mt-4 text-sm text-indigo-500 hover:underline">返回首頁</button>
+      </div>
+    );
+  }
 
   // Timer Effect
   useEffect(() => {
@@ -48,7 +64,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
 
   useEffect(() => {
     if(isStarted) setStartTime(Date.now());
-    // 切換題目時，重置回饋狀態
+    // 切換題目時，重置回饋狀態 (注意：Combo 不重置，要延續！)
     setShowFeedback(false);
     setIsCurrentCorrect(false);
   }, [currentQ]);
@@ -62,12 +78,8 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
       '反應力': { val: 0, count: 0 }, 
       '專注度': { val: 0, max: 0 } 
     };
-    
-    // 防呆：如果沒資料，回傳預設值
-    if (!quizData || !quizData.questions) return [];
-
     quizData.questions.forEach(q => {
-      // 🔥 修正：如果這題設定為不計分，直接跳過統計，不影響雷達圖
+      // 🔥 修正：如果這題設定為不計分，直接跳過統計
       if (q.isScored === false) return;
 
       const ans = answers[q.id];
@@ -118,24 +130,9 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     });
   };
 
-  const currentStats = useMemo(() => calculateStats(), [answers, times, quizData]);
-
-  // 2. 所有的 Hook 宣告完畢後，這裡才能做條件 return
-  // 🔴 載入中防呆
-  if (!quizData || !quizData.questions || quizData.questions.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-slate-400">
-        <Loader2 className="animate-spin mb-2" size={32}/>
-        <p>正在載入挑戰內容，請稍候...</p>
-        <button onClick={onCancel} className="mt-4 text-sm text-indigo-500 hover:underline">返回首頁</button>
-      </div>
-    );
-  }
-
   // 作答處理
   const handleAnswer = (val) => {
-    if (showFeedback) return; // 如果正在顯示詳解，禁止修改答案
-
+    if (showFeedback) return;
     playClick();
     const qId = quizData.questions[currentQ].id;
     const now = Date.now();
@@ -156,17 +153,16 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     }
   };
 
-  // 🔥 核心修正：檢查答案邏輯 (包含調查題處理)
+  // 🔥 核心修正：檢查答案 + Combo 邏輯
   const handleCheckAnswer = () => {
     const q = quizData.questions[currentQ];
     const ans = answers[q.id];
     let correct = false;
 
-    // 🔥 如果是不計分題 (isScored === false)，直接視為通過，但不算對錯
+    // 判斷邏輯 (含不計分題防呆)
     if (q.isScored === false) {
-       correct = true; 
+       correct = true; // 不計分題視為通過，延續 Combo
     } else {
-        // 正常的對錯判斷
         if (q.type === 'choice') {
            if (q.isMulti) {
               const correctOptions = q.options.filter(o => o.isCorrect).map(o => o.label);
@@ -189,14 +185,20 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     }
 
     setIsCurrentCorrect(correct);
-    setShowFeedback(true); // 開啟詳解模式
+    setShowFeedback(true);
 
-    // 音效處理
-    if (q.isScored === false) {
-       playCorrect(); // 不計分題也播正確音效當作確認
+    // 🔥 Combo 更新邏輯
+    if (correct) {
+       setCombo(prev => prev + 1); // 答對加 1
+       if (combo >= 1) { 
+          // 如果已經連擊 (這是第2題以上)，播放連擊音效
+          playCombo();
+       } else {
+          playCorrect(); 
+       }
     } else {
-       if (correct) playCorrect();
-       else playWrong();
+       setCombo(0); // 答錯歸零
+       playWrong();
     }
   };
 
@@ -209,6 +211,8 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
       onSubmit(answers, nickname, inputEmail, finalStats, totalTime);
     }
   };
+
+  const currentStats = useMemo(() => calculateStats(), [answers, times]);
 
   if (!isStarted) {
     return (
@@ -246,20 +250,48 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
   const q = quizData.questions[currentQ];
   const progress = ((currentQ + 1) / quizData.questions.length) * 100;
   const hasAnswered = answers[q.id] && (Array.isArray(answers[q.id]) ? answers[q.id].length > 0 : true);
-  
-  // 🔥 判斷是否為「調查題模式」（不計分）
   const isSurveyMode = q.isScored === false;
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 h-full items-start" ref={containerRef}>
+    <div className="flex flex-col lg:flex-row gap-8 h-full items-start relative" ref={containerRef}>
       
+      {/* 🔥 Combo 浮動特效：絕對定位在畫面中央 */}
+      <AnimatePresence>
+        {showFeedback && combo > 1 && (
+           <motion.div 
+             initial={{ scale: 0, opacity: 0, y: 50, rotate: -10 }}
+             animate={{ scale: 1.5, opacity: 1, y: 0, rotate: 0 }}
+             exit={{ scale: 0, opacity: 0, transition: { duration: 0.2 } }}
+             className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[100] pointer-events-none flex flex-col items-center"
+           >
+              <div className="text-6xl md:text-8xl font-black text-yellow-400 drop-shadow-[0_5px_5px_rgba(0,0,0,0.5)] italic flex items-center gap-2" style={{ textShadow: '0 0 20px orange' }}>
+                 <Flame size={60} className="text-orange-500 animate-pulse"/> 
+                 COMBO <span className="text-white text-8xl md:text-9xl">x{combo}</span>
+              </div>
+              <div className="text-white bg-orange-500 px-4 py-1 rounded-full text-xl font-bold mt-2 shadow-lg animate-bounce">
+                 Unstoppable! 🔥
+              </div>
+           </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 左側：主作答區 */}
       <div className="flex-1 w-full max-w-2xl mx-auto order-2 lg:order-1">
         
         {/* 頂部資訊列 */}
         <div className="mb-6 flex flex-wrap justify-between items-end gap-2">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
               Level {currentQ + 1} / {quizData.questions.length}
+              {/* 🔥 小 Combo 指示器 (持續顯示) */}
+              {combo > 1 && (
+                 <motion.span 
+                   initial={{ scale: 0 }} 
+                   animate={{ scale: 1 }} 
+                   className="bg-orange-500 text-white px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1"
+                 >
+                    <Flame size={10}/> x{combo}
+                 </motion.span>
+              )}
           </div>
           <div className="flex items-center gap-2 md:gap-4">
               <span className="text-indigo-600 font-bold text-sm md:text-base">{nickname}</span>
@@ -310,7 +342,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            // 🔥 根據是否調查題模式調整邊框顏色 (藍色 vs 紅/綠)
             className={`bg-white p-5 md:p-8 rounded-3xl shadow-2xl border relative z-10 transition-colors duration-500 ${
                 showFeedback 
                 ? (isSurveyMode ? 'shadow-blue-100 border-blue-200' : (isCurrentCorrect ? 'shadow-green-100 border-green-200' : 'shadow-red-100 border-red-200'))
@@ -321,7 +352,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                 <span className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-widest">Challenge #{currentQ + 1}</span>
                 {showFeedback && (
                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className={`flex items-center gap-1 font-bold ${isSurveyMode ? 'text-blue-600' : (isCurrentCorrect ? 'text-green-600' : 'text-red-500')}`}>
-                      {/* 🔥 如果是調查題，顯示「已記錄」 */}
                       {isSurveyMode ? <><BookmarkCheck/> 已記錄</> : (isCurrentCorrect ? <><CheckCircle/> 答對了！</> : <><XCircle/> 答錯了！</>)}
                    </motion.div>
                 )}
@@ -348,7 +378,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                       let textClass = "text-slate-600";
 
                       if (showFeedback) {
-                         // 🔥 調查題模式下，只標記已選項目為藍色，不顯示紅綠對錯
                          if (isSurveyMode) {
                             if (selected) {
                                 btnClass = "border-blue-500 bg-blue-50 ring-2 ring-blue-200";
@@ -356,7 +385,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                                 textClass = "text-blue-700";
                             }
                          } else {
-                             // 一般計分模式：顯示紅綠
                              if (isCorrectOption) {
                                 btnClass = "border-green-500 bg-green-50 ring-2 ring-green-200";
                                 iconClass = "bg-green-500 border-green-500";
@@ -370,7 +398,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                              }
                          }
                       } else if (selected) {
-                         // 作答中：選中變藍
                          btnClass = "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200";
                          iconClass = "bg-indigo-500 border-indigo-500";
                          textClass = "text-indigo-700";
@@ -449,7 +476,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
              <button 
                 onClick={handleNext} 
                 disabled={isSubmitting}
-                // 🔥 如果是調查題，按鈕用藍色，否則用綠色
                 className={`w-full md:w-auto px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg text-white transition-all animate-bounce-short ${isSurveyMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
              >
                 {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : (currentQ === quizData.questions.length - 1 ? '查看成績' : '下一關')} 
