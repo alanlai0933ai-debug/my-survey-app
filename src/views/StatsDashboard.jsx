@@ -263,11 +263,44 @@ export default function StatsDashboard({ quizData, responses }) {
       </div>
     );
   };
+  // --- 🎨 自定義懸浮提示 (讓圖表更美) ---
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white/90 backdrop-blur-md p-4 rounded-xl shadow-xl border border-indigo-100">
+          <p className="font-bold text-slate-700 mb-2 border-b border-slate-100 pb-2">{label}</p>
+          {payload.map((entry, index) => (
+            <p key={index} className="text-sm font-medium flex items-center gap-2" style={{ color: entry.color }}>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }}/>
+              {entry.name}: <span className="font-bold text-lg">{entry.value}</span> 人
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
   // ✅ 2. 插入 Loading 狀態檢查
   // 如果題目還沒載入完成，顯示骨架屏
   if (!quizData || !quizData.questions || quizData.questions.length === 0) {
     return (
       <div className="space-y-8 animate-in fade-in duration-500">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+             <div className="flex items-center gap-2">
+                 <Skeleton className="h-8 w-8 rounded-full" />
+                 <Skeleton className="h-8 w-48" />
+             </div>
+             <div className="flex gap-3 w-full md:w-auto">
+                 <Skeleton className="h-10 w-full md:w-40 rounded-xl" />
+                 <Skeleton className="h-10 w-32 rounded-xl" />
+             </div>
+         </div>
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+         </div>
          {/* 模擬頂部 Header */}
          <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
              <div className="flex items-center gap-2">
@@ -281,12 +314,80 @@ export default function StatsDashboard({ quizData, responses }) {
          </div>
          
          {/* 模擬下方卡片 Grid */}
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-         </div>
+<div className="grid grid-cols-1 md:grid-cols-2 gap-8 print:block print:space-y-8 mt-8">
+            {stats.map((s, i) => (
+              <div key={i} className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow break-inside-avoid flex flex-col">
+                
+                {/* 標題區：加上左側裝飾線 */}
+                <div className="mb-6 flex items-center gap-3">
+                    <div className="w-1.5 h-6 bg-indigo-500 rounded-full"/>
+                    <h4 className="font-bold text-lg text-slate-700 leading-tight">{s.title}</h4>
+                </div>
+
+                <div className="h-64 w-full relative flex-1">
+                  <ResponsiveContainer width="100%" height="100%">
+                    
+                    {/* 🔥 1. 優化後的甜甜圈圖 (Hotspot 題型) */}
+                    {s.type === 'hotspot' ? (
+                      <PieChart>
+                        <Pie 
+                            data={s.data} 
+                            cx="50%" 
+                            cy="50%" 
+                            innerRadius={60} // 挖空變成甜甜圈
+                            outerRadius={85} // 外圈大小
+                            paddingAngle={5} // 切片間的縫隙
+                            dataKey="value"
+                            cornerRadius={6} // 圓角切片
+                        >
+                          <Cell fill="#10B981" stroke="none" /> {/* 通過：綠色 */}
+                          <Cell fill="#EF4444" stroke="none" /> {/* 未通過：紅色 */}
+                        </Pie>
+                        {/* 中間顯示文字 */}
+                        <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" className="fill-slate-700 font-black text-2xl">
+                            {Math.round((s.data[0].value / (s.data[0].value + s.data[1].value || 1)) * 100)}%
+                        </text>
+                        <text x="50%" y="62%" textAnchor="middle" dominantBaseline="middle" className="fill-slate-400 text-xs font-bold">
+                            通過率
+                        </text>
+                        <Tooltip content={<CustomTooltip />} />
+                        <Legend verticalAlign="bottom" height={36} iconType="circle"/>
+                      </PieChart>
+
+                    ) : s.type === 'sorting' ? (
+                      // 🔥 2. 優化後的堆疊長條圖 (分類題型)
+                      <BarChart data={s.data} layout="vertical" margin={{ left: 0, right: 30 }} barSize={24}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9"/>
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" width={80} tick={{fontSize: 11, fontWeight: 'bold', fill: '#64748b'}} />
+                        <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
+                        <Legend iconType="circle"/>
+                        {/* 圓角與顏色優化 */}
+                        <Bar dataKey="correct" name="正確歸類" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="wrong" name="歸類錯誤" stackId="a" fill="#EF4444" radius={[0, 10, 10, 0]} />
+                      </BarChart>
+
+                    ) : (
+                      // 🔥 3. 優化後的單一長條圖 (選擇題)
+                      <BarChart data={s.data} layout="vertical" margin={{ left: 0, right: 30 }} barSize={32}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9"/>
+                        <XAxis type="number" hide />
+                        <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fontWeight: 'bold', fill: '#64748b'}} />
+                        <Tooltip content={<CustomTooltip />} cursor={{fill: '#f8fafc'}} />
+                        
+                        {/* 膠囊狀長條圖 */}
+                        <Bar dataKey="value" radius={[0, 12, 12, 0]}>
+                          {s.data.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ))}
+        </div>
       </div>
     );
   }
