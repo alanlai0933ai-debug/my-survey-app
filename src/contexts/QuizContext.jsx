@@ -90,7 +90,8 @@ export function QuizProvider({ children }) {
         }
       );
       
-      setMyResult({ answers: ans, stats: statsData, totalTime: totalTime });
+      setMyResult({ answers: ans, stats: statsData, totalTime: totalTime,nickname: nickname,      // 新增
+          inputEmail: inputEmail  });
       navigate('/result'); 
     } catch (e) { 
       console.error(e);

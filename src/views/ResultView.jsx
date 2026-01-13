@@ -1,12 +1,15 @@
-import React, { useEffect } from 'react'; // 1. 補上 useEffect
-import confetti from 'canvas-confetti'; // 2. 引入特效套件
-import { Clock, RefreshCw } from 'lucide-react';
-// ✅ 這裡已經正確引入了 isPointInPolygon，下面直接用就好，不需要 require
+import React, { useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
+import { Clock, Share2, Award, Calendar, Target, CheckCircle, Zap, AlertTriangle, ArrowRight, User, Mail } from 'lucide-react';
 import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
 import ZoomableImage from '../components/ZoomableImage';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
+import toast from 'react-hot-toast';
+import html2canvas from 'html2canvas';
 
-export default function ResultView({ quizData, userAnswers, stats, totalTime, onBack }) {
+export default function ResultView({ quizData, userAnswers, stats, totalTime, onBack, nickname, inputEmail }) {
+  const cardRef = useRef(null);
+  
   const renderPolygon = (points) => {
     if (!points) return "";
     return points.map(p => `${p.x},${p.y}`).join(' ');
@@ -15,6 +18,7 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
   let totalScore = 0;
   let maxScore = 0;
 
+  // --- 計算分數邏輯 ---
   const results = quizData.questions.map(q => {
     const userAns = userAnswers[q.id];
     const points = Number(q.points) || 0;
@@ -22,202 +26,271 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
     let gainedPoints = 0;
     let isCorrect = false;
     let detail = "";
-    let sortingErrors = [];
+    let sortingErrors = []; 
 
     if (q.type === 'choice') {
       if (q.isMulti) {
-         // --- 複選題邏輯 (詳細版) ---
          const correctOptions = q.options.filter(o => o.isCorrect).map(o => o.label);
          const userSelected = Array.isArray(userAns) ? userAns : [];
-         
-         // 判斷是否全對
          isCorrect = correctOptions.length === userSelected.length && correctOptions.every(v => userSelected.includes(v));
-         
          const userStr = userSelected.length > 0 ? userSelected.join('、') : '未作答';
-         
          detail = (
            <div className="flex flex-col gap-1 mt-1">
              <div>您的選擇: {userStr}</div>
-             <div className="mt-1 pt-1 border-t border-current opacity-90">
-               <span className="block mb-1">正確答案：</span>
-               <ul className="list-none pl-2 m-0 space-y-1">
-                 {correctOptions.map((opt, i) => (
-                   <li key={i} className="flex items-start">
-                     <span className="mr-1.5">•</span>
-                     <span>{opt}</span>
-                   </li>
-                 ))}
-               </ul>
-             </div>
+             {!isCorrect && <div className="mt-1 pt-1 border-t border-current opacity-90 text-xs">正確: {correctOptions.join('、')}</div>}
            </div>
          );
       } else {
-         // --- 單選題邏輯 ---
          const correctOption = q.options.find(o => o.isCorrect)?.label;
          isCorrect = userAns === correctOption;
-         
-         const userVal = (userAns === undefined || userAns === null) ? '未作答' : userAns;
-         const correctVal = correctOption || '未設定';
-         detail = `您的答案: ${userVal} (正確答案: ${correctVal})`;
+         detail = `您的答案: ${userAns || '未作答'} ${!isCorrect ? `(正確: ${correctOption})` : ''}`;
       }
-      
       if (isCorrect) gainedPoints = points;
 
     } else if (q.type === 'hotspot') {
-      // --- 熱點題邏輯 (已修正) ---
       const totalTargets = q.targets?.length || 0;
-      
-      // 🔥 修正點：直接使用上方 import 的 isPointInPolygon
-      const targetHits = (q.targets || []).map(t => {
-         const hit = (userAns || []).some(pin => isPointInPolygon(pin, t.points));
-         return hit;
-      });
-      
+      const targetHits = (q.targets || []).map(t => (userAns || []).some(pin => isPointInPolygon(pin, t.points)));
       const hitCount = targetHits.filter(h => h).length;
       isCorrect = hitCount === totalTargets && totalTargets > 0;
       gainedPoints = totalTargets > 0 ? Math.round((hitCount / totalTargets) * points) : 0;
-      detail = `命中 ${hitCount} / ${totalTargets} 個目標`;
+      detail = `命中 ${hitCount} / ${totalTargets}`;
 
     } else if (q.type === 'sorting') {
-      // --- 分類題邏輯 ---
+      // 🔥 修復：分類題錯誤詳解邏輯
       const userMap = userAns || {};
       let correctCount = 0;
-      
       q.items.forEach(item => {
          const userCat = userMap[item.id];
          if (userCat) {
            if (item.correctCategory && userCat !== item.correctCategory) {
-             sortingErrors.push(`${item.text}: 應為 ${item.correctCategory} (誤植: ${userCat})`);
+             sortingErrors.push({
+                text: item.text,
+                userCat: userCat,
+                correctCat: item.correctCategory,
+                type: 'wrong'
+             });
            } else if (item.correctCategory && userCat === item.correctCategory) {
              correctCount++;
            }
          } else {
-           sortingErrors.push(`${item.text}: 未分類`);
+           sortingErrors.push({
+              text: item.text,
+              correctCat: item.correctCategory,
+              type: 'missed'
+           });
          }
       });
       const totalItems = q.items.length || 1;
       isCorrect = correctCount === totalItems;
       gainedPoints = Math.round((correctCount / totalItems) * points);
-      detail = `正確分類 ${correctCount} / ${totalItems}`;
+      detail = `正確 ${correctCount}/${totalItems}`;
     }
 
     totalScore += gainedPoints;
     return { ...q, isCorrect, detail, userAns, gainedPoints, sortingErrors };
   });
 
-  // 3. 加入勝利特效邏輯 (useEffect)
+  // --- 特效與下載 ---
   useEffect(() => {
-    // 設定及格分數 (例如總分的 60%)
     const passingScore = maxScore * 0.6;
-    
-    // 如果及格且總分大於 0，就噴發紙屑
     if (totalScore >= passingScore && maxScore > 0) {
       const duration = 3 * 1000;
       const animationEnd = Date.now() + duration;
       const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
-
       const randomInRange = (min, max) => Math.random() * (max - min) + min;
-
       const interval = setInterval(function() {
         const timeLeft = animationEnd - Date.now();
-
-        if (timeLeft <= 0) {
-          return clearInterval(interval);
-        }
-
-        const particleCount = 50 * (timeLeft / duration);
-        // 從左邊噴射
+        if (timeLeft <= 0) return clearInterval(interval);
         confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
-        // 從右邊噴射
         confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
       }, 250);
-      
-      return () => clearInterval(interval); // 清除計時器，避免組件卸載後還在噴
+      return () => clearInterval(interval);
     }
   }, [totalScore, maxScore]);
 
+  const handleDownload = async () => {
+    if (!cardRef.current) return;
+    const toastId = toast.loading('印製專屬證書中...');
+    try {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const canvas = await html2canvas(cardRef.current, { 
+        scale: 3, useCORS: true, backgroundColor: '#ffffff', logging: false 
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `戰績卡_${nickname}_${new Date().getTime()}.png`;
+      link.click();
+      toast.success('下載成功！', { id: toastId });
+    } catch (error) {
+      console.error(error);
+      toast.error('生成失敗', { id: toastId });
+    }
+  };
+
+  const today = new Date().toLocaleDateString('zh-TW');
+
   return (
-    <div className="max-w-4xl mx-auto bg-white p-8 rounded-3xl shadow-xl border border-slate-100 flex flex-col md:flex-row gap-8">
-      {/* 左側：總分與雷達 */}
-      <div className="w-full md:w-1/3 flex flex-col items-center border-b md:border-b-0 md:border-r border-slate-100 pb-8 md:pb-0 md:pr-8">
-        <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">挑戰成績單</h2>
-          <div className="text-5xl font-black text-indigo-600">
-            {totalScore} <span className="text-lg text-slate-400 font-medium">/ {maxScore}</span>
-          </div>
-          <div className="text-sm text-slate-500 mt-2 font-bold flex items-center justify-center gap-1">
-              <Clock size={14}/> 總耗時: {formatTime(totalTime || 0)}
-          </div>
-        </div>
-        
-        {stats && (
-          <div className="w-full h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="70%" data={stats}>
-                <PolarGrid stroke="#e2e8f0" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
-                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                <Radar name="My Stats" dataKey="A" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.6} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-        
-        <button onClick={onBack} className="w-full mt-auto py-3 bg-slate-800 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-900 transition-all">
-           <RefreshCw size={18}/> 返回首頁
-        </button>
+    <div className="max-w-4xl mx-auto flex flex-col gap-6 px-4 md:px-0 py-6">
+      
+      {/* 頂部按鈕 */}
+      <div className="flex justify-between items-center print:hidden">
+         <button onClick={onBack} className="text-slate-500 font-bold hover:text-slate-800 flex items-center gap-2 transition-colors">
+            ← 返回首頁
+         </button>
+         <button onClick={handleDownload} className="bg-indigo-600 text-white px-5 py-2.5 rounded-full font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all hover:-translate-y-1">
+           <Share2 size={18}/> 下載證書
+         </button>
       </div>
 
-      {/* 右側：詳細題解 */}
-      <div className="flex-1 space-y-6 overflow-y-auto max-h-[600px] pr-2">
-        <h3 className="text-lg font-bold text-slate-700 mb-4">詳細題解</h3>
-        {results.map((r, idx) => (
-          <div key={r.id} className="border-b border-slate-100 pb-4 last:border-0">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex-1">
-                <span className="text-xs font-bold text-slate-400 block mb-1">Q{idx+1} ({r.points}分)</span>
-                <h4 className="font-bold text-slate-800">{r.text}</h4>
-              </div>
-              <div className="text-right">
-                <span className={`text-sm font-bold ${r.gainedPoints === Number(r.points) ? 'text-green-500' : 'text-orange-500'}`}>
-                  +{r.gainedPoints} 分
-                </span>
-              </div>
-            </div>
-            
-            {r.type === 'hotspot' && r.image && (
-              <div className="relative aspect-video bg-slate-100 rounded-lg overflow-hidden mt-2 border-2 border-slate-200 mb-2">
-                <ZoomableImage 
-                  src={r.image} 
-                  alt="題目圖片"
-                  markers={r.userAns || []} 
-                  onClick={() => {}} 
-                />
-                <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  {r.targets?.map((t, i) => (
-                     <polygon key={i} points={renderPolygon(t.points)} fill="rgba(34, 197, 94, 0.4)" stroke="#22c55e" strokeWidth="1" vectorEffect="non-scaling-stroke"/>
-                  ))}
-                </svg>
-              </div>
-            )}
+      {/* 戰績卡 (截圖區) */}
+      <div className="flex justify-center">
+        <div ref={cardRef} className="bg-white relative overflow-hidden w-full max-w-md rounded-3xl shadow-2xl border-4 border-double border-indigo-100 p-8" style={{ backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 20%), radial-gradient(circle at 90% 80%, rgba(236, 72, 153, 0.05) 0%, transparent 20%)' }}>
+          {/* 背景裝飾 */}
+          <div className="absolute -top-10 -right-10 w-32 h-32 bg-yellow-300 rounded-full mix-blend-multiply filter blur-2xl opacity-30 animate-blob"></div>
+          <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-pink-300 rounded-full mix-blend-multiply filter blur-2xl opacity-30 animate-blob animation-delay-2000"></div>
 
-            {r.type === 'sorting' && r.sortingErrors && r.sortingErrors.length > 0 && (
-              <div className="bg-red-50 p-3 rounded-lg text-xs text-red-600 mt-2 space-y-1 border border-red-100">
-                <div className="font-bold mb-1">錯誤項目：</div>
-                {r.sortingErrors.map((err, i) => <div key={i}>• {err}</div>)}
-              </div>
-            )}
-            
-            {/* 詳細解析區塊 */}
-            {r.type === 'choice' && (
-               <div className={`text-sm font-bold mt-1 ${r.isCorrect ? 'text-indigo-600' : 'text-red-500'}`}>
-                 {r.detail}
-               </div>
-            )}
-            
-            {r.type !== 'choice' && <p className="text-sm text-slate-500 mt-1">{r.detail}</p>}
+          {/* 1. 標題區 */}
+          <div className="text-center mb-6 relative z-10">
+            <div className="inline-flex items-center justify-center gap-2 bg-slate-900 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest mb-3 shadow-md">
+               <Target size={12} className="text-yellow-400"/> 互動挑戰實驗室
+            </div>
+            <h2 className="text-3xl font-black text-slate-800 tracking-tight">挑戰成績單</h2>
+            <p className="text-slate-400 text-sm font-medium mt-1">CERTIFICATE OF ACHIEVEMENT</p>
           </div>
-        ))}
+
+          {/* 🔥 新增 2：使用者資訊 (大頭貼 + 暱稱 + Email) */}
+          <div className="flex flex-col items-center justify-center mb-6 relative z-10">
+             <div className="w-16 h-16 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full flex items-center justify-center shadow-lg mb-2 border-4 border-white">
+                <User size={32} className="text-white" />
+             </div>
+             <h3 className="text-xl font-bold text-slate-800">{nickname || 'Challenger'}</h3>
+             {inputEmail && <p className="text-xs text-slate-400 flex items-center gap-1"><Mail size={10}/> {inputEmail}</p>}
+          </div>
+
+          {/* 🔥 修復 1：分數區 (使用 flex baseline 解決重疊) */}
+          <div className="flex flex-col items-center justify-center mb-6 relative z-10">
+             <div className="flex items-baseline justify-center gap-2 text-indigo-600">
+                <span className="text-7xl font-black tracking-tighter leading-none drop-shadow-sm">
+                   {totalScore}
+                </span>
+                <span className="text-2xl font-bold text-slate-400">
+                   / {maxScore}
+                </span>
+             </div>
+             <div className="mt-4 flex gap-4 text-xs font-bold text-slate-500 bg-slate-100 px-4 py-2 rounded-xl">
+                <span className="flex items-center gap-1"><Clock size={14}/> {formatTime(totalTime || 0)}</span>
+                <span className="w-px h-4 bg-slate-300"></span>
+                <span className="flex items-center gap-1"><Calendar size={14}/> {today}</span>
+             </div>
+          </div>
+
+          {/* 雷達圖 */}
+          {stats && (
+            <div className="w-full h-56 relative z-10 -ml-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={stats}>
+                  <PolarGrid stroke="#e2e8f0" strokeWidth={1} />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: '#475569', fontSize: 12, fontWeight: '800' }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                  <Radar name="My Stats" dataKey="A" stroke="#6366f1" strokeWidth={3} fill="#6366f1" fillOpacity={0.4} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* 底部評語 */}
+          <div className="mt-6 pt-6 border-t-2 border-dashed border-slate-100 text-center relative z-10">
+             <div className="flex justify-center gap-3 mb-2">
+                <div className="bg-green-50 text-green-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
+                   <CheckCircle size={12}/> 正確率 {maxScore > 0 ? Math.round((totalScore/maxScore)*100) : 0}%
+                </div>
+                <div className="bg-orange-50 text-orange-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
+                   <Zap size={12}/> 反應 {stats?.find(s=>s.subject==='反應力')?.A || 0}
+                </div>
+             </div>
+             <p className="text-xs text-slate-400 font-medium">Scan to challenge me!</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 詳細題解 (網頁版顯示) */}
+      <div className="mt-8 border-t border-slate-200 pt-8">
+        <h3 className="text-xl font-bold text-slate-700 mb-6 flex items-center gap-2">
+           <Award className="text-indigo-500"/> 詳細題解分析
+        </h3>
+        <div className="grid gap-6">
+          {results.map((r, idx) => (
+            <div key={r.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col gap-3">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <span className="inline-block bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-xs font-bold mb-2">Q{idx+1}</span>
+                  <h4 className="font-bold text-slate-800 leading-snug">{r.text}</h4>
+                </div>
+                <div className="text-right ml-4">
+                  <span className={`text-lg font-black ${r.gainedPoints === Number(r.points) ? 'text-green-500' : 'text-orange-400'}`}>
+                    +{r.gainedPoints}
+                  </span>
+                  <span className="text-xs text-slate-400 block">/ {r.points}</span>
+                </div>
+              </div>
+              
+              {/* 熱點圖顯示 */}
+              {r.type === 'hotspot' && r.image && (
+                <div className="relative aspect-video bg-slate-50 rounded-xl overflow-hidden border border-slate-200">
+                  <ZoomableImage src={r.image} alt="題目圖片" markers={r.userAns || []} onClick={() => {}} />
+                  <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    {r.targets?.map((t, i) => (
+                       <polygon key={i} points={renderPolygon(t.points)} fill="rgba(34, 197, 94, 0.3)" stroke="#22c55e" strokeWidth="1"/>
+                    ))}
+                  </svg>
+                </div>
+              )}
+
+              {/* 🔥 修復 2：分類題詳細錯誤顯示 */}
+              {r.type === 'sorting' && r.sortingErrors && r.sortingErrors.length > 0 && (
+                <div className="bg-red-50 p-4 rounded-xl text-sm text-red-800 border border-red-100 space-y-3">
+                  <div className="font-bold flex items-center gap-2 text-red-600">
+                    <AlertTriangle size={16}/> 錯誤修正：
+                  </div>
+                  <ul className="space-y-2 pl-1">
+                    {r.sortingErrors.map((err, i) => (
+                      <li key={i} className="flex items-start gap-2 leading-tight">
+                        <span className="mt-0.5 text-red-400">•</span>
+                        <div>
+                          <span className="font-bold text-slate-700 mr-2">{err.text}</span>
+                          {err.type === 'wrong' ? (
+                            <span className="text-slate-500 bg-white px-2 py-0.5 rounded border border-red-100 text-xs inline-flex items-center gap-1 flex-wrap">
+                                (誤: <span className="text-red-500 line-through decoration-2 mx-1">{err.userCat}</span> 
+                                <ArrowRight size={12} className="text-slate-400"/> 
+                                正: <span className="text-green-600 font-black mx-1">{err.correctCat}</span>)
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 bg-white px-2 py-0.5 rounded border border-red-100 text-xs inline-flex items-center gap-1 flex-wrap">
+                                (未分類 <ArrowRight size={12}/> 正: <span className="text-green-600 font-black mx-1">{err.correctCat}</span>)
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              
+              {/* 選擇題詳解 */}
+              {r.type === 'choice' && (
+                 <div className={`text-sm font-medium p-3 rounded-lg ${r.isCorrect ? 'bg-indigo-50 text-indigo-700' : 'bg-red-50 text-red-700'}`}>
+                   {r.detail}
+                 </div>
+              )}
+              
+              {/* 通用詳解 */}
+              {r.type !== 'choice' && r.type !== 'sorting' && (
+                 <div className="text-sm font-medium p-3 rounded-lg bg-slate-50 text-slate-600">{r.detail}</div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

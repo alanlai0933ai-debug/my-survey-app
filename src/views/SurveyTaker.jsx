@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronLeft, ChevronRight, Target, Zap } from 'lucide-react';
+import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronLeft, ChevronRight, Target, Zap, Trophy } from 'lucide-react';
 import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 
@@ -141,11 +141,13 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
 
   if (!isStarted) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[500px] text-center space-y-8">
+      // ✅ 優化：加入 px-4 防止手機版貼邊
+      <div className="flex flex-col items-center justify-center min-h-[500px] text-center space-y-8 px-4">
         <div className="p-6 bg-white rounded-full shadow-xl shadow-indigo-100 mb-4">
            <User size={64} className="text-indigo-600" />
         </div>
-        <h2 className="text-4xl font-bold text-slate-800">歡迎來到挑戰賽</h2>
+        {/* ✅ 優化：字體 RWD */}
+        <h2 className="text-3xl md:text-4xl font-bold text-slate-800">歡迎來到挑戰賽</h2>
         <p className="text-slate-500 max-w-md">請輸入您的基本資料以開始遊戲。您的成績將會即時分析並列入排行榜。</p>
         <div className="flex flex-col gap-4 w-full max-w-xs">
           <input 
@@ -176,16 +178,21 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
   const progress = ((currentQ + 1) / quizData.questions.length) * 100;
 
   return (
+    // ✅ 優化：flex-col (手機) -> lg:flex-row (電腦)
     <div className="flex flex-col lg:flex-row gap-8 h-full items-start" ref={containerRef}>
+      
+      {/* 左側：主作答區 */}
       <div className="flex-1 w-full max-w-2xl mx-auto">
-        <div className="mb-6 flex justify-between items-end">
+        
+        {/* 頂部資訊列：加入 flex-wrap 防止手機版爆版 */}
+        <div className="mb-6 flex flex-wrap justify-between items-end gap-2">
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               Level {currentQ + 1} / {quizData.questions.length}
           </div>
-          <div className="flex items-center gap-4">
-              <span className="text-indigo-600 font-bold">{nickname}</span>
-              <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-sm font-bold flex items-center gap-2">
-                <Clock size={16}/> {formatTime(elapsedTime)}
+          <div className="flex items-center gap-2 md:gap-4">
+              <span className="text-indigo-600 font-bold text-sm md:text-base">{nickname}</span>
+              <span className="bg-slate-100 text-slate-600 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm font-bold flex items-center gap-2">
+                <Clock size={14}/> {formatTime(elapsedTime)}
               </span>
               <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
                  <Star size={12} fill="currentColor"/> {q.points || 0}分
@@ -193,7 +200,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
           </div>
         </div>
 
-        {/* 🌊 海浪感進度條 (小海龜回歸版) 🌊 */}
+        {/* 🌊 海浪感進度條 (小海龜) 🌊 */}
         <div className="relative mb-8 mt-4">
            {/* 1. 軌道背景 */}
            <div className="h-5 bg-blue-50/50 rounded-full overflow-hidden shadow-inner border border-blue-100 relative backdrop-blur-sm">
@@ -204,7 +211,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                 animate={{ width: `${progress}%` }} 
                 transition={{ type: "spring", stiffness: 35, damping: 12 }}
                 >
-                    {/* 🌊 水紋特效：使用斜向條紋模擬水流 */}
+                    {/* 🌊 水紋特效 */}
                     <motion.div 
                     className="absolute inset-0 w-full h-full opacity-20"
                     style={{ 
@@ -214,20 +221,19 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                     animate={{ backgroundPosition: ["0rem 0rem", "1rem 0rem"] }}
                     transition={{ repeat: Infinity, ease: "linear", duration: 1 }}
                     />
-                    
-                    {/* 🫧 浪花氣泡：模擬前端的泡沫 */}
+                    {/* 🫧 浪花氣泡 */}
                     <div className="absolute right-1 top-1 w-1.5 h-1.5 bg-white/60 rounded-full animate-ping" />
                     <div className="absolute right-3 bottom-1 w-1 h-1 bg-white/40 rounded-full animate-pulse" />
                 </motion.div>
            </div>
 
-           {/* 3. 🐢 海龜領航員 (跟隨進度) */}
+           {/* 3. 🐢 海龜領航員 */}
            <motion.div 
             className="absolute top-1/2 -translate-y-1/2 z-10"
             initial={{ left: 0 }}
             animate={{ left: `${progress}%` }}
             transition={{ type: "spring", stiffness: 35, damping: 12 }} 
-            style={{ marginLeft: '-14px' }} // 校正位置，讓海龜剛好在線頭
+            style={{ marginLeft: '-14px' }}
            >
              <div className="relative group cursor-pointer">
                 {/* 發光光暈 */}
@@ -243,15 +249,17 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
         <AnimatePresence mode="wait">
           <motion.div
             key={currentQ}
-            initial={{ opacity: 0, x: 50 }}
+            initial={{ opacity: 0, x: 20 }} // 手機版位移稍微縮小
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -50 }}
-            className="bg-white p-8 rounded-3xl shadow-2xl shadow-indigo-100 border border-white relative z-10"
+            exit={{ opacity: 0, x: -20 }}
+            // ✅ 優化：padding RWD，手機版 p-5，電腦版 p-8
+            className="bg-white p-5 md:p-8 rounded-3xl shadow-2xl shadow-indigo-100 border border-white relative z-10"
           >
              {/* 題目顯示邏輯 */}
              <span className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-xs font-bold mb-4 uppercase tracking-widest">Challenge #{currentQ + 1}</span>
              <div className="mb-8">
-                <h3 className="text-2xl font-bold text-slate-800 leading-relaxed mb-2">
+                {/* ✅ 優化：標題字體 RWD */}
+                <h3 className="text-xl md:text-2xl font-bold text-slate-800 leading-relaxed mb-2">
                     {q.text} {q.isMulti && <span className="text-sm font-normal text-slate-500 ml-2">(可複選)</span>}
                 </h3>
                 {q.note && <div className="inline-block bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg"><p className="text-slate-500 text-sm font-medium">💡 {q.note}</p></div>}
@@ -259,6 +267,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
 
              {/* 題型選擇與組件調用 */}
              {q.type === 'choice' && (
+                  // ✅ 優化：選項在手機版單欄，平板以上雙欄
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {q.options.map((opt, oIdx) => {
                       const label = typeof opt === 'string' ? opt : opt.label;
@@ -292,15 +301,16 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
           </motion.div>
         </AnimatePresence>
 
-        <div className="flex justify-between mt-8">
-          <button onClick={() => setCurrentQ(Math.max(0, currentQ - 1))} disabled={currentQ === 0} className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors ${currentQ === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:bg-slate-100'}`}>
-            <ChevronLeft size={20}/> 上一關
+        {/* 底部按鈕區：加入 pb-10 防止手機瀏覽器擋住 */}
+        <div className="flex justify-between mt-8 pb-10">
+          <button onClick={() => setCurrentQ(Math.max(0, currentQ - 1))} disabled={currentQ === 0} className={`px-4 md:px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors ${currentQ === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:bg-slate-100'}`}>
+            <ChevronLeft size={20}/> <span className="hidden md:inline">上一關</span> {/* ✅ 手機版隱藏文字 */}
           </button>
           
           <button 
             onClick={handleNext} 
             disabled={isSubmitting}
-            className="px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 transition-all disabled:opacity-50 disabled:bg-gray-400"
+            className="px-6 md:px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 transition-all disabled:opacity-50 disabled:bg-gray-400"
           >
             {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : (currentQ === quizData.questions.length - 1 ? '完成挑戰' : '下一關')} 
             {!isSubmitting && <ChevronRight size={20}/>}
@@ -308,14 +318,16 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
         </div>
       </div>
 
-      <div className="hidden lg:block w-80 sticky top-28">
-        <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100">
-          <h4 className="text-center font-bold text-slate-800 mb-4 flex items-center justify-center gap-2"><Target size={18} className="text-pink-500"/> 即時能力分析</h4>
-          <div className="h-64 w-full">
+      {/* 右側：即時分析 (手機版移除 hidden，改為 w-full 並顯示在下方) */}
+      <div className="w-full lg:w-80 lg:sticky lg:top-28">
+        <div className="bg-white p-4 md:p-6 rounded-3xl shadow-xl border border-slate-100">
+          <h4 className="text-center font-bold text-slate-800 mb-4 flex items-center justify-center gap-2"><Trophy size={18} className="text-pink-500"/> 即時能力分析</h4>
+          {/* 雷達圖容器：手機版高度設小一點 (h-48) */}
+          <div className="h-48 md:h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart cx="50%" cy="50%" outerRadius="70%" data={currentStats}>
                 <PolarGrid stroke="#e2e8f0" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 'bold' }} />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
                 <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
                 <Radar name="My Stats" dataKey="A" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.6} />
               </RadarChart>

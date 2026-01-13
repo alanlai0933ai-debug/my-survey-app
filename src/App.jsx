@@ -122,7 +122,8 @@ function AppContent() {
               <Route path="/result" element={
                 myResult ? (
                   <PageWrapper>
-                    <ResultView quizData={quizData} userAnswers={myResult.answers} stats={myResult.stats} totalTime={myResult.totalTime} onBack={() => navigate('/')} />
+                    <ResultView quizData={quizData} userAnswers={myResult.answers} stats={myResult.stats} totalTime={myResult.totalTime} nickname={myResult.nickname}
+                    inputEmail={myResult.inputEmail} onBack={() => navigate('/')} />
                   </PageWrapper>
                 ) : <Navigate to="/" replace />
               } />
