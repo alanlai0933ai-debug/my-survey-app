@@ -1,10 +1,10 @@
-import './index.css'  // 這行就像是電源線，沒這行樣式就不會動
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App.jsx'
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx' // 引用我們剛剛整理好的 App
+import './index.css'
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
+ReactDOM.createRoot(document.getElementById('root')).render(
+  // <React.StrictMode> // 如果拖曳有問題可以暫時註解這行
     <App />
-  </StrictMode>,
+  // </React.StrictMode>,
 )
