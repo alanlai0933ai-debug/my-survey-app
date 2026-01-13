@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronLeft, ChevronRight, Target, Zap, Trophy } from 'lucide-react';
+import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronRight, Target, Zap, Trophy, XCircle, AlertCircle, BookmarkCheck } from 'lucide-react';
 import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
+import useSound from 'use-sound';
 
 // 引入子組件
 import HotspotQuestion from '../components/HotspotQuestion';
 import SortingQuestion from '../components/SortingQuestion';
 
 export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting }) {
+  // 1. 所有 Hooks 必須放在最上面
   const [answers, setAnswers] = useState({});
   const [currentQ, setCurrentQ] = useState(0); 
   const containerRef = useRef(null); 
@@ -19,18 +21,17 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
   const [gameStartTime, setGameStartTime] = useState(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [times, setTimes] = useState({});
+  // eslint-disable-next-line no-unused-vars
   const [interactionCount, setInteractionCount] = useState(0);
 
-  // 🔴 載入中防呆
-  if (!quizData || !quizData.questions || quizData.questions.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-slate-400">
-        <Loader2 className="animate-spin mb-2" size={32}/>
-        <p>正在載入挑戰內容，請稍候...</p>
-        <button onClick={onCancel} className="mt-4 text-sm text-indigo-500 hover:underline">返回首頁</button>
-      </div>
-    );
-  }
+  // 控制是否顯示即時回饋 (詳解模式)
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [isCurrentCorrect, setIsCurrentCorrect] = useState(false); // 這一題答對了嗎？
+
+  // 音效
+  const [playClick] = useSound('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3', { volume: 0.5 });
+  const [playCorrect] = useSound('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3', { volume: 0.5 });
+  const [playWrong] = useSound('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3', { volume: 0.5 });
 
   // Timer Effect
   useEffect(() => {
@@ -47,6 +48,9 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
 
   useEffect(() => {
     if(isStarted) setStartTime(Date.now());
+    // 切換題目時，重置回饋狀態
+    setShowFeedback(false);
+    setIsCurrentCorrect(false);
   }, [currentQ]);
 
   // 成績計算邏輯
@@ -58,7 +62,14 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
       '反應力': { val: 0, count: 0 }, 
       '專注度': { val: 0, max: 0 } 
     };
+    
+    // 防呆：如果沒資料，回傳預設值
+    if (!quizData || !quizData.questions) return [];
+
     quizData.questions.forEach(q => {
+      // 🔥 修正：如果這題設定為不計分，直接跳過統計，不影響雷達圖
+      if (q.isScored === false) return;
+
       const ans = answers[q.id];
       const timeSpent = times[q.id] || 0;
       
@@ -107,23 +118,85 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     });
   };
 
+  const currentStats = useMemo(() => calculateStats(), [answers, times, quizData]);
+
+  // 2. 所有的 Hook 宣告完畢後，這裡才能做條件 return
+  // 🔴 載入中防呆
+  if (!quizData || !quizData.questions || quizData.questions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-slate-400">
+        <Loader2 className="animate-spin mb-2" size={32}/>
+        <p>正在載入挑戰內容，請稍候...</p>
+        <button onClick={onCancel} className="mt-4 text-sm text-indigo-500 hover:underline">返回首頁</button>
+      </div>
+    );
+  }
+
+  // 作答處理
   const handleAnswer = (val) => {
+    if (showFeedback) return; // 如果正在顯示詳解，禁止修改答案
+
+    playClick();
     const qId = quizData.questions[currentQ].id;
     const now = Date.now();
     const spent = (now - startTime) / 1000;
+    
     setTimes(prev => ({ ...prev, [qId]: (prev[qId] || 0) + spent }));
     setStartTime(now);
     setInteractionCount(prev => prev + 1);
+    
     const q = quizData.questions[currentQ];
     if (q.type === 'choice' && q.isMulti) {
       const current = answers[qId] || [];
       const exists = current.includes(val);
       const next = exists ? current.filter(v => v !== val) : [...current, val];
       setAnswers({ ...answers, [qId]: next });
-    } else if (q.type === 'sorting') {
-      setAnswers({ ...answers, [qId]: val });
     } else {
       setAnswers({ ...answers, [qId]: val });
+    }
+  };
+
+  // 🔥 核心修正：檢查答案邏輯 (包含調查題處理)
+  const handleCheckAnswer = () => {
+    const q = quizData.questions[currentQ];
+    const ans = answers[q.id];
+    let correct = false;
+
+    // 🔥 如果是不計分題 (isScored === false)，直接視為通過，但不算對錯
+    if (q.isScored === false) {
+       correct = true; 
+    } else {
+        // 正常的對錯判斷
+        if (q.type === 'choice') {
+           if (q.isMulti) {
+              const correctOptions = q.options.filter(o => o.isCorrect).map(o => o.label);
+              const userSelected = Array.isArray(ans) ? ans : [];
+              correct = correctOptions.length === userSelected.length && correctOptions.every(v => userSelected.includes(v));
+           } else {
+              const correctOption = q.options.find(o => o.isCorrect)?.label;
+              correct = ans === correctOption;
+           }
+        } else if (q.type === 'hotspot') {
+           const totalTargets = q.targets?.length || 0;
+           const hits = (q.targets || []).filter(t => (ans || []).some(pin => isPointInPolygon(pin, t.points))).length;
+           correct = hits === totalTargets && totalTargets > 0;
+        } else if (q.type === 'sorting') {
+           const totalItems = q.items.length || 1;
+           let correctCount = 0;
+           q.items.forEach(i => { if (ans && ans[i.id] === i.correctCategory) correctCount++; });
+           correct = correctCount === totalItems;
+        }
+    }
+
+    setIsCurrentCorrect(correct);
+    setShowFeedback(true); // 開啟詳解模式
+
+    // 音效處理
+    if (q.isScored === false) {
+       playCorrect(); // 不計分題也播正確音效當作確認
+    } else {
+       if (correct) playCorrect();
+       else playWrong();
     }
   };
 
@@ -137,16 +210,12 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     }
   };
 
-  const currentStats = useMemo(() => calculateStats(), [answers, times]);
-
   if (!isStarted) {
     return (
-      // ✅ 優化：加入 px-4 防止手機版貼邊
       <div className="flex flex-col items-center justify-center min-h-[500px] text-center space-y-8 px-4">
         <div className="p-6 bg-white rounded-full shadow-xl shadow-indigo-100 mb-4">
            <User size={64} className="text-indigo-600" />
         </div>
-        {/* ✅ 優化：字體 RWD */}
         <h2 className="text-3xl md:text-4xl font-bold text-slate-800">歡迎來到挑戰賽</h2>
         <p className="text-slate-500 max-w-md">請輸入您的基本資料以開始遊戲。您的成績將會即時分析並列入排行榜。</p>
         <div className="flex flex-col gap-4 w-full max-w-xs">
@@ -176,15 +245,18 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
 
   const q = quizData.questions[currentQ];
   const progress = ((currentQ + 1) / quizData.questions.length) * 100;
+  const hasAnswered = answers[q.id] && (Array.isArray(answers[q.id]) ? answers[q.id].length > 0 : true);
+  
+  // 🔥 判斷是否為「調查題模式」（不計分）
+  const isSurveyMode = q.isScored === false;
 
   return (
-    // ✅ 優化：flex-col (手機) -> lg:flex-row (電腦)
     <div className="flex flex-col lg:flex-row gap-8 h-full items-start" ref={containerRef}>
       
       {/* 左側：主作答區 */}
-      <div className="flex-1 w-full max-w-2xl mx-auto">
+      <div className="flex-1 w-full max-w-2xl mx-auto order-2 lg:order-1">
         
-        {/* 頂部資訊列：加入 flex-wrap 防止手機版爆版 */}
+        {/* 頂部資訊列 */}
         <div className="mb-6 flex flex-wrap justify-between items-end gap-2">
           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               Level {currentQ + 1} / {quizData.questions.length}
@@ -200,34 +272,23 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
           </div>
         </div>
 
-        {/* 🌊 海浪感進度條 (小海龜) 🌊 */}
+        {/* 海浪進度條 */}
         <div className="relative mb-8 mt-4">
-           {/* 1. 軌道背景 */}
            <div className="h-5 bg-blue-50/50 rounded-full overflow-hidden shadow-inner border border-blue-100 relative backdrop-blur-sm">
-                {/* 2. 藍色水流本體 */}
                 <motion.div 
                 className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 relative overflow-hidden"
                 initial={{ width: 0 }} 
                 animate={{ width: `${progress}%` }} 
                 transition={{ type: "spring", stiffness: 35, damping: 12 }}
                 >
-                    {/* 🌊 水紋特效 */}
                     <motion.div 
                     className="absolute inset-0 w-full h-full opacity-20"
-                    style={{ 
-                        backgroundImage: 'linear-gradient(45deg,rgba(255,255,255,.3) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.3) 50%,rgba(255,255,255,.3) 75%,transparent 75%,transparent)', 
-                        backgroundSize: '1rem 1rem' 
-                    }}
+                    style={{ backgroundImage: 'linear-gradient(45deg,rgba(255,255,255,.3) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.3) 50%,rgba(255,255,255,.3) 75%,transparent 75%,transparent)', backgroundSize: '1rem 1rem' }}
                     animate={{ backgroundPosition: ["0rem 0rem", "1rem 0rem"] }}
                     transition={{ repeat: Infinity, ease: "linear", duration: 1 }}
                     />
-                    {/* 🫧 浪花氣泡 */}
-                    <div className="absolute right-1 top-1 w-1.5 h-1.5 bg-white/60 rounded-full animate-ping" />
-                    <div className="absolute right-3 bottom-1 w-1 h-1 bg-white/40 rounded-full animate-pulse" />
                 </motion.div>
            </div>
-
-           {/* 3. 🐢 海龜領航員 */}
            <motion.div 
             className="absolute top-1/2 -translate-y-1/2 z-10"
             initial={{ left: 0 }}
@@ -236,9 +297,6 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
             style={{ marginLeft: '-14px' }}
            >
              <div className="relative group cursor-pointer">
-                {/* 發光光暈 */}
-                <div className="absolute -inset-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-30 blur transition-opacity"></div>
-                {/* 圖示本體 */}
                 <div className="bg-white p-1 rounded-full shadow-lg border-2 border-blue-200 flex items-center justify-center w-9 h-9 relative transform -rotate-6 hover:rotate-0 transition-transform">
                    <span className="text-lg">🐢</span> 
                 </div>
@@ -249,45 +307,90 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
         <AnimatePresence mode="wait">
           <motion.div
             key={currentQ}
-            initial={{ opacity: 0, x: 20 }} // 手機版位移稍微縮小
+            initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            // ✅ 優化：padding RWD，手機版 p-5，電腦版 p-8
-            className="bg-white p-5 md:p-8 rounded-3xl shadow-2xl shadow-indigo-100 border border-white relative z-10"
+            // 🔥 根據是否調查題模式調整邊框顏色 (藍色 vs 紅/綠)
+            className={`bg-white p-5 md:p-8 rounded-3xl shadow-2xl border relative z-10 transition-colors duration-500 ${
+                showFeedback 
+                ? (isSurveyMode ? 'shadow-blue-100 border-blue-200' : (isCurrentCorrect ? 'shadow-green-100 border-green-200' : 'shadow-red-100 border-red-200'))
+                : 'shadow-indigo-100 border-white'
+            }`}
           >
-             {/* 題目顯示邏輯 */}
-             <span className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-xs font-bold mb-4 uppercase tracking-widest">Challenge #{currentQ + 1}</span>
+             <div className="flex justify-between items-start mb-4">
+                <span className="inline-block bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-widest">Challenge #{currentQ + 1}</span>
+                {showFeedback && (
+                   <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className={`flex items-center gap-1 font-bold ${isSurveyMode ? 'text-blue-600' : (isCurrentCorrect ? 'text-green-600' : 'text-red-500')}`}>
+                      {/* 🔥 如果是調查題，顯示「已記錄」 */}
+                      {isSurveyMode ? <><BookmarkCheck/> 已記錄</> : (isCurrentCorrect ? <><CheckCircle/> 答對了！</> : <><XCircle/> 答錯了！</>)}
+                   </motion.div>
+                )}
+             </div>
+
              <div className="mb-8">
-                {/* ✅ 優化：標題字體 RWD */}
                 <h3 className="text-xl md:text-2xl font-bold text-slate-800 leading-relaxed mb-2">
                     {q.text} {q.isMulti && <span className="text-sm font-normal text-slate-500 ml-2">(可複選)</span>}
                 </h3>
-                {q.note && <div className="inline-block bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg"><p className="text-slate-500 text-sm font-medium">💡 {q.note}</p></div>}
              </div>
 
-             {/* 題型選擇與組件調用 */}
+             {/* 題型渲染區 */}
              {q.type === 'choice' && (
-                  // ✅ 優化：選項在手機版單欄，平板以上雙欄
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {q.options.map((opt, oIdx) => {
                       const label = typeof opt === 'string' ? opt : opt.label;
                       const image = typeof opt === 'string' ? "" : opt.image;
+                      const isCorrectOption = typeof opt === 'string' ? false : opt.isCorrect;
                       const currentAns = answers[q.id];
                       const selected = Array.isArray(currentAns) ? currentAns.includes(label) : currentAns === label;
+                      
+                      let btnClass = "border-slate-100 hover:border-indigo-200 hover:bg-slate-50";
+                      let iconClass = "border-slate-300";
+                      let textClass = "text-slate-600";
+
+                      if (showFeedback) {
+                         // 🔥 調查題模式下，只標記已選項目為藍色，不顯示紅綠對錯
+                         if (isSurveyMode) {
+                            if (selected) {
+                                btnClass = "border-blue-500 bg-blue-50 ring-2 ring-blue-200";
+                                iconClass = "bg-blue-500 border-blue-500";
+                                textClass = "text-blue-700";
+                            }
+                         } else {
+                             // 一般計分模式：顯示紅綠
+                             if (isCorrectOption) {
+                                btnClass = "border-green-500 bg-green-50 ring-2 ring-green-200";
+                                iconClass = "bg-green-500 border-green-500";
+                                textClass = "text-green-700";
+                             } else if (selected && !isCorrectOption) {
+                                btnClass = "border-red-500 bg-red-50 ring-2 ring-red-200";
+                                iconClass = "bg-red-500 border-red-500";
+                                textClass = "text-red-700";
+                             } else {
+                                btnClass = "border-slate-100 opacity-50";
+                             }
+                         }
+                      } else if (selected) {
+                         // 作答中：選中變藍
+                         btnClass = "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200";
+                         iconClass = "bg-indigo-500 border-indigo-500";
+                         textClass = "text-indigo-700";
+                      }
+
                       return (
                         <motion.button 
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
+                          whileHover={{ scale: showFeedback ? 1 : 1.02 }}
+                          whileTap={{ scale: showFeedback ? 1 : 0.98 }}
                           key={oIdx} 
                           onClick={() => handleAnswer(label)}
-                          className={`text-left flex flex-col gap-2 p-4 border-2 rounded-2xl transition-all duration-200 h-full ${selected ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200' : 'border-slate-100 hover:border-indigo-200 hover:bg-slate-50'}`}
+                          disabled={showFeedback}
+                          className={`text-left flex flex-col gap-2 p-4 border-2 rounded-2xl transition-all duration-200 h-full ${btnClass}`}
                         >
                           {image && <img src={image} className="w-full h-32 object-cover rounded-lg mb-2" alt="Option" />}
                           <div className="flex items-center gap-3">
-                            <div className={`w-6 h-6 rounded flex-shrink-0 flex items-center justify-center border-2 ${q.isMulti ? 'rounded-md' : 'rounded-full'} ${selected ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300'}`}>
-                               {selected && <CheckCircle size={14} className="text-white" />}
+                            <div className={`w-6 h-6 rounded flex-shrink-0 flex items-center justify-center border-2 ${q.isMulti ? 'rounded-md' : 'rounded-full'} ${iconClass}`}>
+                               {(selected || (showFeedback && !isSurveyMode && isCorrectOption)) && <CheckCircle size={14} className="text-white" />}
                             </div>
-                            <span className={`font-bold ${selected ? 'text-indigo-700' : 'text-slate-600'}`}>{label}</span>
+                            <span className={`font-bold ${textClass}`}>{label}</span>
                           </div>
                         </motion.button>
                       );
@@ -295,34 +398,71 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                   </div>
              )}
 
-             {q.type === 'hotspot' && <HotspotQuestion q={q} currentAnswer={answers[q.id] || []} onAnswer={handleAnswer} />}
-             {q.type === 'sorting' && <SortingQuestion q={q} currentAnswer={answers[q.id] || {}} onAnswer={handleAnswer} />}
+             {q.type === 'hotspot' && (
+                <HotspotQuestion 
+                   q={q} 
+                   currentAnswer={answers[q.id] || []} 
+                   onAnswer={handleAnswer} 
+                   isReviewMode={showFeedback} 
+                />
+             )}
+             {q.type === 'sorting' && (
+                <SortingQuestion 
+                   q={q} 
+                   currentAnswer={answers[q.id] || {}} 
+                   onAnswer={handleAnswer} 
+                   isReviewMode={showFeedback} 
+                />
+             )}
+
+             {showFeedback && (
+                <motion.div 
+                   initial={{ height: 0, opacity: 0 }} 
+                   animate={{ height: 'auto', opacity: 1 }} 
+                   className="mt-6 pt-6 border-t border-slate-100 bg-slate-50 p-4 rounded-xl"
+                >
+                   <div className="flex items-start gap-2">
+                      <AlertCircle className="text-indigo-500 mt-1" size={20}/>
+                      <div>
+                         <h4 className="font-bold text-slate-700 mb-1">解析：</h4>
+                         <p className="text-slate-600 text-sm leading-relaxed">
+                            {q.note || "本題暫無詳細解析。"}
+                         </p>
+                      </div>
+                   </div>
+                </motion.div>
+             )}
 
           </motion.div>
         </AnimatePresence>
 
-        {/* 底部按鈕區：加入 pb-10 防止手機瀏覽器擋住 */}
-        <div className="flex justify-between mt-8 pb-10">
-          <button onClick={() => setCurrentQ(Math.max(0, currentQ - 1))} disabled={currentQ === 0} className={`px-4 md:px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-colors ${currentQ === 0 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:bg-slate-100'}`}>
-            <ChevronLeft size={20}/> <span className="hidden md:inline">上一關</span> {/* ✅ 手機版隱藏文字 */}
-          </button>
-          
-          <button 
-            onClick={handleNext} 
-            disabled={isSubmitting}
-            className="px-6 md:px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 transition-all disabled:opacity-50 disabled:bg-gray-400"
-          >
-            {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : (currentQ === quizData.questions.length - 1 ? '完成挑戰' : '下一關')} 
-            {!isSubmitting && <ChevronRight size={20}/>}
-          </button>
+        <div className="flex justify-end mt-8 pb-10">
+          {!showFeedback ? (
+             <button 
+                onClick={handleCheckAnswer} 
+                disabled={!hasAnswered}
+                className="w-full md:w-auto px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg bg-indigo-600 text-white hover:bg-indigo-700 hover:scale-105 transition-all disabled:opacity-50 disabled:bg-slate-300"
+             >
+                確定送出 <CheckCircle size={20}/>
+             </button>
+          ) : (
+             <button 
+                onClick={handleNext} 
+                disabled={isSubmitting}
+                // 🔥 如果是調查題，按鈕用藍色，否則用綠色
+                className={`w-full md:w-auto px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg text-white transition-all animate-bounce-short ${isSurveyMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
+             >
+                {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : (currentQ === quizData.questions.length - 1 ? '查看成績' : '下一關')} 
+                {!isSubmitting && <ChevronRight size={20}/>}
+             </button>
+          )}
         </div>
       </div>
 
-      {/* 右側：即時分析 (手機版移除 hidden，改為 w-full 並顯示在下方) */}
-      <div className="w-full lg:w-80 lg:sticky lg:top-28">
+      {/* 右側：即時分析 (保持 RWD) */}
+      <div className="w-full lg:w-80 order-1 lg:order-2 lg:sticky lg:top-28">
         <div className="bg-white p-4 md:p-6 rounded-3xl shadow-xl border border-slate-100">
           <h4 className="text-center font-bold text-slate-800 mb-4 flex items-center justify-center gap-2"><Trophy size={18} className="text-pink-500"/> 即時能力分析</h4>
-          {/* 雷達圖容器：手機版高度設小一點 (h-48) */}
           <div className="h-48 md:h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart cx="50%" cy="50%" outerRadius="70%" data={currentStats}>

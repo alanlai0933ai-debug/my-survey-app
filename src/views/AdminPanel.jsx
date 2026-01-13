@@ -3,24 +3,32 @@ import React, { useState } from 'react';
 import { 
   Edit3, Save, PenTool, Database, Trash2, Plus, 
   ImageIcon, Loader2, CheckSquare, Target, LayoutGrid, 
-  ShieldAlert, CheckCircle 
+  ShieldAlert, CheckCircle, HelpCircle, AlertCircle 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// ✅ 引入我們拆分出去的工具
+// 引入工具
 import { uploadImageToStorage, deleteImageFromStorage } from '../utils/imageHelpers';
-// ✅ 引入新的混合版編輯器
+// 引入熱點編輯器
 import HotspotAdminEditor from '../components/HotspotAdminEditor';
 
 function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResponse }) {
   const [tab, setTab] = useState('design');
-  const [title, setTitle] = useState(initialData.title || "");
-  const [questions, setQuestions] = useState(initialData.questions || []);
+  const [title, setTitle] = useState(initialData?.title || "");
+  const [questions, setQuestions] = useState(initialData?.questions || []);
   const [confirmId, setConfirmId] = useState(null);
   const [uploading, setUploading] = useState(false);
 
   const addQuestion = (type) => {
-    const base = { id: Date.now().toString(), text: "新題目", type, points: 10 };
+    const base = { 
+        id: Date.now().toString(), 
+        text: "新題目", 
+        type, 
+        points: 10,
+        isScored: true, // 🔥 預設為計分題
+        note: "" // 🔥 初始化詳解欄位
+    };
+
     if (type === 'choice') {
       setQuestions([...questions, { 
         ...base, 
@@ -29,7 +37,6 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
         options: [{ label: "選項 A", image: "", isCorrect: false }, { label: "選項 B", image: "", isCorrect: false }]
       }]);
     } else if (type === 'hotspot') {
-      // 預設不給 targets，讓使用者自己畫
       setQuestions([...questions, { ...base, text: "請框出畫面中的...", image: "", targets: [] }]);
     } else if (type === 'sorting') {
       setQuestions([...questions, { 
@@ -53,7 +60,6 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
     setUploading(true); 
     
     let oldImageUrl = "";
-    // 取得舊圖 URL 以便稍後刪除
     if (optIdx !== null) {
        oldImageUrl = questions[qIdx].options[optIdx].image;
     } else {
@@ -64,7 +70,6 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
       const newImageUrl = await uploadImageToStorage(file);
       const next = [...questions];
       
-      // 更新 State
       if (optIdx !== null) {
         next[qIdx].options[optIdx].image = newImageUrl;
       } else {
@@ -73,7 +78,6 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
       }
       setQuestions(next);
 
-      // 刪除舊圖 (清理垃圾)
       if (oldImageUrl) {
         await deleteImageFromStorage(oldImageUrl);
       }
@@ -87,14 +91,13 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
 
   const handleOptionUpdate = (qIdx, optIdx, field, val) => {
     const next = [...questions];
-    // 防呆：確保 options 是物件結構
     if (typeof next[qIdx].options[optIdx] === 'string') {
         next[qIdx].options[optIdx] = { label: val, image: "", isCorrect: false };
     } else {
         next[qIdx].options[optIdx][field] = val;
     }
     
-    // 如果是單選題且設為正確，把其他選項改為錯誤
+    // 如果是計分題且設為正確，把其他選項改為錯誤 (複選除外)
     if (field === 'isCorrect' && val === true && !next[qIdx].isMulti) {
         next[qIdx].options.forEach((o, i) => {
             if (i !== optIdx) o.isCorrect = false;
@@ -116,7 +119,6 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
       const imageUrl = await uploadImageToStorage(file);
       const next = [...questions];
       
-      // 刪除舊圖邏輯
       const oldUrl = next[qIdx].items[itemIdx].image;
       if(oldUrl) await deleteImageFromStorage(oldUrl);
 
@@ -180,19 +182,33 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                   <div className="flex flex-col gap-3">
                     <div className="flex gap-4">
                       <input className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-indigo-100 outline-none" value={q.text} onChange={e => updateQuestion(qIdx, 'text', e.target.value)} placeholder="題目描述..." />
-                      <div className="w-24">
-                         <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">配分</label>
-                         <input type="number" className="w-full p-2 border rounded-lg font-bold text-center" value={q.points || 0} onChange={e => updateQuestion(qIdx, 'points', Number(e.target.value))} />
+                      
+                      {/* 🔥 分數與計分設定區塊 */}
+                      <div className="w-32 flex flex-col gap-2">
+                         <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-200" title="取消勾選則此題不計分 (如人口調查)">
+                            <input 
+                               type="checkbox" 
+                               checked={q.isScored !== false} 
+                               onChange={(e) => updateQuestion(qIdx, 'isScored', e.target.checked)}
+                               className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                            />
+                            <label className="text-xs font-bold text-slate-600 cursor-pointer">計分題</label>
+                         </div>
+                         <div className="flex items-center gap-1">
+                            <label className="text-[10px] text-slate-400 font-bold whitespace-nowrap">分數:</label>
+                            <input 
+                                type="number" 
+                                className={`w-full p-1 border rounded text-center text-sm font-bold ${q.isScored === false ? 'bg-slate-100 text-slate-400' : ''}`} 
+                                value={q.points || 0} 
+                                onChange={e => updateQuestion(qIdx, 'points', Number(e.target.value))} 
+                                disabled={q.isScored === false} 
+                            />
+                         </div>
                       </div>
                     </div>
-                    <input 
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 focus:ring-2 focus:ring-indigo-100 outline-none" 
-                      value={q.note || ''} 
-                      onChange={e => updateQuestion(qIdx, 'note', e.target.value)} 
-                      placeholder="在此輸入補充說明文字 (例如：請依照大小順序排列)..." 
-                    />
                   </div>
 
+                  {/* 選擇題編輯器 */}
                   {q.type === 'choice' && (
                     <div className="space-y-4">
                         <div className="flex items-center gap-2 mb-2">
@@ -207,13 +223,16 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                              return (
                                <div key={oIdx} className={`flex items-start gap-2 border p-2 rounded-lg ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-slate-50'}`}>
                                  <div className="mt-3">
-                                   <div 
-                                      onClick={() => handleOptionUpdate(qIdx, oIdx, 'isCorrect', !isCorrect)}
-                                      className={`w-6 h-6 cursor-pointer flex items-center justify-center border-2 transition-all ${q.isMulti ? 'rounded-md' : 'rounded-full'} ${isCorrect ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300 hover:border-green-400'}`}
-                                      title={isCorrect ? "點擊取消正確答案" : "設為正確答案"}
-                                     >
-                                        {isCorrect && <CheckCircle size={14} className="text-white" />}
-                                     </div>
+                                   {/* 🔥 不計分題隱藏正確答案設定 */}
+                                   {q.isScored !== false && (
+                                     <div 
+                                        onClick={() => handleOptionUpdate(qIdx, oIdx, 'isCorrect', !isCorrect)}
+                                        className={`w-6 h-6 cursor-pointer flex items-center justify-center border-2 transition-all ${q.isMulti ? 'rounded-md' : 'rounded-full'} ${isCorrect ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300 hover:border-green-400'}`}
+                                        title={isCorrect ? "點擊取消正確答案" : "設為正確答案"}
+                                       >
+                                          {isCorrect && <CheckCircle size={14} className="text-white" />}
+                                       </div>
+                                   )}
                                  </div>
                                  <div className="w-12 h-12 bg-slate-200 rounded flex-shrink-0 relative overflow-hidden group/img cursor-pointer hover:opacity-80">
                                       {optImage ? <img src={optImage} className="w-full h-full object-cover" alt="opt" /> : <ImageIcon size={20} className="text-slate-400 m-auto mt-3"/>}
@@ -235,23 +254,18 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                     </div>
                   )}
 
+                  {/* 熱點題編輯器 */}
                   {q.type === 'hotspot' && (
                     <div className="space-y-4">
                         <div className="flex items-center gap-4 bg-indigo-50 p-3 rounded-xl border border-indigo-100">
                           <div className="flex items-center gap-2">
                               <label className="text-sm font-bold text-slate-700">限制點擊數量：</label>
-                              <input   
-                                type="number" min="1" max="10"
-                                className="w-20 p-2 border border-indigo-200 rounded-lg text-center font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500"
-                                value={q.maxClicks || 1}
-                                onChange={e => updateQuestion(qIdx, 'maxClicks', Number(e.target.value))}
-                              />
+                              <input type="number" min="1" max="10" className="w-20 p-2 border border-indigo-200 rounded-lg text-center font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" value={q.maxClicks || 1} onChange={e => updateQuestion(qIdx, 'maxClicks', Number(e.target.value))} />
                           </div>
                           <span className="text-xs text-slate-400">(例如：題目若問「找出 3 個垃圾」，請設為 3)</span>
                         </div>
                       <div className="relative aspect-video bg-slate-100 rounded-xl overflow-hidden group border-2 border-dashed border-slate-300">
                         {q.image ? (
-                            // 🔥 [關鍵修正]：Props 名稱對接新版編輯器
                             <HotspotAdminEditor 
                                 imageUrl={q.image} 
                                 targets={q.targets || []} 
@@ -260,32 +274,22 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                         ) : (
                             <div className="w-full h-full flex flex-col items-center justify-center text-slate-400"><Target size={40} className="mb-2"/>上傳圖片以開始</div>
                         )}
-                        
-                        {/* 圖片上傳按鈕 (如果已有圖片則隱藏上傳區，避免誤觸) */}
-                        {!q.image && (
-                           <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => handleImageUpload(qIdx, e.target.files[0], 'image')} />
-                        )}
-
+                        {!q.image && <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => handleImageUpload(qIdx, e.target.files[0], 'image')} />}
                         {q.image && <button onClick={async (e) => { 
                           if(window.confirm('確定要刪除此圖片並重設熱點嗎？')) {
                              await deleteImageFromStorage(q.image);
-                             // 刪除圖片時，同時清空已畫的 targets
-                             const next = [...questions];
-                             next[qIdx].image = '';
-                             next[qIdx].targets = [];
-                             setQuestions(next);
+                             const next = [...questions]; next[qIdx].image = ''; next[qIdx].targets = []; setQuestions(next);
                           }
                         }} className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded hover:bg-red-500 z-10"><Trash2 size={14}/></button>}
                       </div>
-                      
-                      {/* 下方提示列 */}
                       <div className="flex justify-between items-center text-xs text-slate-400">
-                         <span>目前有 {q.targets?.length || 0} 個判定區</span>
-                         <span>💡 點擊畫面新增區域，拖曳綠點調整</span>
+                          <span>目前有 {q.targets?.length || 0} 個判定區</span>
+                          <span>💡 點擊畫面新增區域，拖曳綠點調整</span>
                       </div>
                     </div>
                   )}
 
+                  {/* 分類題編輯器 */}
                   {q.type === 'sorting' && (
                     <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-4">
@@ -336,6 +340,28 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                     </div>
                   )}
 
+                  {/* 🔥 詳解/解析欄位 (最下方) */}
+                  <div className="mt-6 pt-4 border-t border-slate-100">
+                     <label className="flex items-center gap-2 text-sm font-bold text-slate-600 mb-2">
+                        <HelpCircle size={16} className="text-indigo-500"/> 
+                        詳解 / 解析說明 (選填)
+                     </label>
+                     <div className="relative">
+                       <textarea 
+                          value={q.note || ''}
+                          onChange={(e) => updateQuestion(qIdx, 'note', e.target.value)}
+                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 text-sm min-h-[100px] focus:border-indigo-500 focus:bg-white outline-none transition-all resize-none"
+                          placeholder="請輸入本題的詳細解析，這段文字將在使用者答錯或查看詳解時顯示..."
+                       />
+                       <div className="absolute right-3 bottom-3 text-slate-300">
+                         <AlertCircle size={16}/>
+                       </div>
+                     </div>
+                     <p className="text-xs text-slate-400 mt-2 pl-1">
+                        💡 提示：這裡的內容會在使用者點擊「確定送出」後滑出顯示。
+                     </p>
+                  </div>
+
                 </div>
               ))}
             </div>
@@ -346,7 +372,7 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
             </div>
           </>
         )}
-
+        
         {/* 頁籤內容：填報資料管理 */}
         {tab === 'data' && (
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -410,8 +436,8 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
                    <button onClick={() => setConfirmId(null)} className="flex-1 py-2 font-bold text-slate-500 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">取消</button>
                    <button 
                       onClick={() => {
-                         onDeleteResponse(confirmId);
-                         setConfirmId(null);
+                          onDeleteResponse(confirmId);
+                          setConfirmId(null);
                       }}
                       className="flex-1 py-2 font-bold text-white bg-red-500 rounded-xl hover:bg-red-600 shadow-lg shadow-red-200 transition-colors"
                    >
