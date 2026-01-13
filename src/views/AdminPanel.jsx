@@ -3,9 +3,10 @@ import React, { useState } from 'react';
 import { 
   Edit3, Save, PenTool, Database, Trash2, Plus, 
   ImageIcon, Loader2, CheckSquare, Target, LayoutGrid, 
-  ShieldAlert, CheckCircle, HelpCircle, AlertCircle 
+  ShieldAlert, CheckCircle, HelpCircle, AlertCircle ,LayoutDashboard
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import AdminDashboard from '../components/AdminDashboard';
 
 // 引入工具
 import { uploadImageToStorage, deleteImageFromStorage } from '../utils/imageHelpers';
@@ -150,12 +151,23 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
         </div>
         
         <div className="flex gap-2">
+          {/* 1. 數據戰情室按鈕 */}
+          <button 
+             onClick={() => setTab('dashboard')}
+             className={`px-6 py-3 rounded-t-xl font-bold text-sm transition-colors ${tab === 'dashboard' ? 'bg-white text-indigo-600' : 'bg-indigo-700/50 text-indigo-100 hover:bg-indigo-700'}`}
+          >
+             <LayoutDashboard size={16} className="inline mr-2"/> 數據戰情室
+          </button>
+          
+          {/* 2. 問題設計按鈕 */}
           <button 
              onClick={() => setTab('design')}
              className={`px-6 py-3 rounded-t-xl font-bold text-sm transition-colors ${tab === 'design' ? 'bg-white text-indigo-600' : 'bg-indigo-700/50 text-indigo-100 hover:bg-indigo-700'}`}
           >
              <PenTool size={16} className="inline mr-2"/> 問題設計
           </button>
+
+          {/* 3. 填報資料按鈕 */}
           <button 
              onClick={() => setTab('data')}
              className={`px-6 py-3 rounded-t-xl font-bold text-sm transition-colors ${tab === 'data' ? 'bg-white text-indigo-600' : 'bg-indigo-700/50 text-indigo-100 hover:bg-indigo-700'}`}
@@ -167,6 +179,16 @@ function AdminPanel({ initialData, onSave, isSubmitting, responses, onDeleteResp
       
       <div className="p-8 space-y-8 flex-1 bg-slate-50">
         {/* 頁籤內容：問題設計 */}
+        {/* 頁籤內容：數據戰情室 (新增的) */}
+{tab === 'dashboard' && (
+    <div className="bg-slate-50 min-h-full">
+        <div className="mb-6">
+            <h3 className="text-2xl font-bold text-slate-800">專案成效總覽</h3>
+            <p className="text-slate-500">即時監控問卷挑戰狀況與數據分佈</p>
+        </div>
+        <AdminDashboard responses={responses} quizData={initialData} />
+    </div>
+)}
         {tab === 'design' && (
           <>
             <input className="w-full text-3xl font-bold border-b-2 border-slate-200 p-2 outline-none focus:border-indigo-500 bg-transparent transition-colors" value={title} onChange={e => setTitle(e.target.value)} placeholder="請輸入問卷標題..." />
