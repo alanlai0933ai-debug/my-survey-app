@@ -3,8 +3,10 @@ import {
   doc, onSnapshot, collection, query, orderBy, setDoc, addDoc, deleteDoc, serverTimestamp 
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { useAuth } from './AuthContext'; // 👈 我們可以直接在這裡用 Auth！
+import { useAuth } from './AuthContext';
 import { useNavigate } from 'react-router-dom';
+// ✅ 1. 引入 Toast 工具
+import toast from 'react-hot-toast';
 
 const QuizContext = createContext();
 
@@ -12,8 +14,8 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'my-survey-app';
 const QUIZ_ID = 'global_shared_quiz_v2';
 
 export function QuizProvider({ children }) {
-  const { user } = useAuth(); // 取得使用者資訊
-  const navigate = useNavigate(); // 取得跳轉功能
+  const { user } = useAuth();
+  const navigate = useNavigate();
   
   const [quizData, setQuizData] = useState({ title: "載入中...", questions: [] });
   const [responses, setResponses] = useState([]);
@@ -45,43 +47,71 @@ export function QuizProvider({ children }) {
     });
   }, [user]);
 
-  // Actions (原本在 App.jsx 的功能)
+  // Actions (全面升級為 Toast 通知)
+  
+  // ✅ 發布/儲存問卷
   const saveQuiz = async (data) => {
     if(isSubmitting) return;
     setIsSubmitting(true);
+    
+    // 使用 toast.promise 自動處理 Loading / Success / Error 三種狀態
     try {
-      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'quizzes', QUIZ_ID), data);
-      alert("問卷已發布！");
+      await toast.promise(
+        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'quizzes', QUIZ_ID), data),
+        {
+          loading: '正在儲存問卷設定...',
+          success: '🎉 問卷已成功發布！',
+          error: (err) => `儲存失敗: ${err.message}`,
+        }
+      );
       navigate('/'); 
-    } catch (e) { 
-      alert("儲存失敗: " + e.message);
+    } catch (e) {
+      console.error(e); // 錯誤已經由 toast 顯示，這裡只需 log
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // ✅ 提交問卷答案
   const submitResponse = async (ans, nickname, inputEmail, statsData, totalTime) => {
     if(isSubmitting) return;
     setIsSubmitting(true);
+
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `responses_${QUIZ_ID}`), {
-        answers: ans, submittedAt: serverTimestamp(), userId: user?.uid || 'anonymous', 
-        userEmail: user?.email || 'anonymous', inputEmail, nickname, stats: statsData, totalTime
-      });
+      await toast.promise(
+        addDoc(collection(db, 'artifacts', appId, 'public', 'data', `responses_${QUIZ_ID}`), {
+          answers: ans, submittedAt: serverTimestamp(), userId: user?.uid || 'anonymous', 
+          userEmail: user?.email || 'anonymous', inputEmail, nickname, stats: statsData, totalTime
+        }),
+        {
+          loading: '正在提交成績...',
+          success: '🚀 挑戰完成！前往結果頁...',
+          error: (err) => `提交失敗: ${err.message}`,
+        }
+      );
+      
       setMyResult({ answers: ans, stats: statsData, totalTime: totalTime });
       navigate('/result'); 
     } catch (e) { 
-      alert("提交失敗：" + e.message);
+      console.error(e);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // ✅ 刪除單筆回應
   const deleteResponse = async (responseId) => {
     try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `responses_${QUIZ_ID}`, responseId));
+      await toast.promise(
+        deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `responses_${QUIZ_ID}`, responseId)),
+        {
+          loading: '正在刪除紀錄...',
+          success: '🗑️ 紀錄已刪除',
+          error: (err) => `刪除失敗: ${err.message}`,
+        }
+      );
     } catch (error) {
-      alert("刪除失敗：" + error.message);
+      console.error(error);
     }
   };
 

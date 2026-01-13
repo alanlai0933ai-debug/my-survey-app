@@ -1,24 +1,30 @@
-import React from 'react';
+// src/App.jsx
+import React, { Suspense, lazy } from 'react'; // 👈 1. 引入 Suspense 和 lazy
 import { Routes, Route, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion'; // ✅ 補上 motion
+import { AnimatePresence, motion } from 'framer-motion';
 import { CheckSquare, ArrowLeft } from 'lucide-react';
+import { Toaster } from 'react-hot-toast';
 
-// 引入 Providers
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { QuizProvider, useQuiz } from './contexts/QuizContext';
-
-// 引入 Views
-import HomeView from './views/HomeView';
-import AdminPanel from './views/AdminPanel';
-import SurveyTaker from './views/SurveyTaker';
-import ResultView from './views/ResultView';
-import StatsDashboard from './views/StatsDashboard';
+import PageLoader from './components/PageLoader';
 import AdminAuthWrapper from './components/AdminAuthWrapper';
 
-// ✅ 1. 引入剛剛做好的全域載入元件
-import PageLoader from './components/PageLoader';
+// ❌ 移除舊的靜態引入 (這樣會導致所有頁面一次載入)
+// import HomeView from './views/HomeView';
+// import AdminPanel from './views/AdminPanel';
+// import SurveyTaker from './views/SurveyTaker';
+// import ResultView from './views/ResultView';
+// import StatsDashboard from './views/StatsDashboard';
 
-// ✅ 2. 定義統一的轉場動畫參數 (絲滑切換的關鍵)
+// ✅ 2. 改用 Lazy Loading (動態引入)
+// 只有當使用者切換到該路由時，瀏覽器才會去下載那個檔案
+const HomeView = lazy(() => import('./views/HomeView'));
+const AdminPanel = lazy(() => import('./views/AdminPanel'));
+const SurveyTaker = lazy(() => import('./views/SurveyTaker'));
+const ResultView = lazy(() => import('./views/ResultView'));
+const StatsDashboard = lazy(() => import('./views/StatsDashboard'));
+
 const pageVariants = {
   initial: { opacity: 0, y: 20, scale: 0.98 },
   in: { opacity: 1, y: 0, scale: 1 },
@@ -31,7 +37,6 @@ const pageTransition = {
   duration: 0.4
 };
 
-// ✅ 3. 建立包裝器：讓每個頁面自動套用動畫
 function PageWrapper({ children }) {
   return (
     <motion.div
@@ -54,12 +59,10 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ 4. 使用漂亮的 PageLoader 取代純文字
   if (loading) return <PageLoader text="正在驗證身份..." />;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-800 font-sans print:bg-white overflow-x-hidden">
-      {/* Header */}
       <header className="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-20 border-b border-slate-200 print:hidden">
         <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3 cursor-pointer group" onClick={() => !isSubmitting && navigate('/')}>
@@ -84,64 +87,73 @@ function AppContent() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-10 print:p-0 print:max-w-none relative">
-        <AnimatePresence mode="wait">
-          {/* ✅ 5. 這裡加上 location 與 key，觸發路由切換動畫 */}
-          <Routes location={location} key={location.pathname}>
-            
-            <Route path="/" element={
-              <PageWrapper>
-                <HomeView quizTitle={quizData.title} responseCount={responses.length} isAdmin={true} />
-              </PageWrapper>
-            } />
-
-            <Route path="/admin" element={
-              <AdminAuthWrapper user={user} onCancel={() => navigate('/')}>
+        {/* ✅ 3. 加入 Suspense 保護罩 */}
+        {/* 當 lazy 的組件還在下載時，顯示 fallback 裡面的內容 (這裡復用我們的 PageLoader) */}
+        <Suspense fallback={<PageLoader text="載入頁面模組中..." />}>
+          <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+              
+              <Route path="/" element={
                 <PageWrapper>
-                  <AdminPanel 
-                    initialData={quizData} 
-                    onSave={saveQuiz} 
-                    isSubmitting={isSubmitting} 
-                    responses={responses} 
-                    onDeleteResponse={deleteResponse}
-                  />
+                  <HomeView quizTitle={quizData.title} responseCount={responses.length} isAdmin={true} />
                 </PageWrapper>
-              </AdminAuthWrapper>
-            } />
+              } />
 
-            <Route path="/survey" element={
-              <PageWrapper>
-                <SurveyTaker quizData={quizData} onSubmit={submitResponse} onCancel={() => navigate('/')} isSubmitting={isSubmitting} />
-              </PageWrapper>
-            } />
+              <Route path="/admin" element={
+                <AdminAuthWrapper user={user} onCancel={() => navigate('/')}>
+                  <PageWrapper>
+                    <AdminPanel 
+                      initialData={quizData} 
+                      onSave={saveQuiz} 
+                      isSubmitting={isSubmitting} 
+                      responses={responses} 
+                      onDeleteResponse={deleteResponse}
+                    />
+                  </PageWrapper>
+                </AdminAuthWrapper>
+              } />
 
-            <Route path="/result" element={
-              myResult ? (
+              <Route path="/survey" element={
                 <PageWrapper>
-                  <ResultView quizData={quizData} userAnswers={myResult.answers} stats={myResult.stats} totalTime={myResult.totalTime} onBack={() => navigate('/')} />
+                  <SurveyTaker quizData={quizData} onSubmit={submitResponse} onCancel={() => navigate('/')} isSubmitting={isSubmitting} />
                 </PageWrapper>
-              ) : <Navigate to="/" replace />
-            } />
+              } />
 
-            <Route path="/stats" element={
-               <PageWrapper>
-                 <StatsDashboard quizData={quizData} responses={responses} />
-               </PageWrapper>
-            } />
-            
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AnimatePresence>
+              <Route path="/result" element={
+                myResult ? (
+                  <PageWrapper>
+                    <ResultView quizData={quizData} userAnswers={myResult.answers} stats={myResult.stats} totalTime={myResult.totalTime} onBack={() => navigate('/')} />
+                  </PageWrapper>
+                ) : <Navigate to="/" replace />
+              } />
+
+              <Route path="/stats" element={
+                 <PageWrapper>
+                   <StatsDashboard quizData={quizData} responses={responses} />
+                 </PageWrapper>
+              } />
+              
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AnimatePresence>
+        </Suspense>
       </main>
     </div>
   );
 }
 
-// 主入口：負責包裹 Context
 export default function App() {
   return (
     <AuthProvider>
       <QuizProvider>
         <AppContent />
+        <Toaster 
+          position="top-center" 
+          toastOptions={{
+            duration: 3000,
+            style: { background: '#333', color: '#fff', borderRadius: '10px' },
+          }} 
+        />
       </QuizProvider>
     </AuthProvider>
   );
