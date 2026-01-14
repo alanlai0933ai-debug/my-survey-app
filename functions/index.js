@@ -1,59 +1,66 @@
 /**
  * functions/index.js
- * 這是您的 AI 雲端大腦
+ * 這是您的 AI 雲端大腦 (修復版)
  */
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// 🔥 這裡填入您的 Gemini API Key
-// (正式上線建議用 defineSecret，但測試階段我們先直接填)
-const API_KEY = "AIzaSyCPoBI2M7QR9-5pUgU0UUztDjaJoUq0F4Y"; 
+// 2. 定義我們要使用哪個鑰匙
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
-const genAI = new GoogleGenerativeAI(API_KEY);
+// 3. 設定雲端函數 (將兩個部分合併，並修正語法)
+exports.generateQuizFeedback = onCall({ secrets: [geminiApiKey], cors: true }, async (request) => {
+    
+    // 4. 在函數內部，取出真正的 Key 並初始化 AI
+    const API_KEY = geminiApiKey.value();
+    const genAI = new GoogleGenerativeAI(API_KEY);
 
-exports.generateQuizFeedback = onCall({ cors: true }, async (request) => {
-  // 1. 接收前端傳來的資料
-  const { questionText, userAnswer, correctOption, questionType } = request.data;
+    // ---------------- 以下是您原本的邏輯內容 ----------------
 
-  // 簡單防呆
-  if (!questionText) {
-    throw new HttpsError("invalid-argument", "題目內容不能為空");
-  }
+    // 1. 接收前端傳來的資料
+    const { questionText, userAnswer, correctOption, questionType } = request.data;
 
-  try {
-    // 2. 設定 AI 模型 (Gemini 1.5 Flash 速度快又便宜)
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    // 簡單防呆
+    if (!questionText) {
+        throw new HttpsError("invalid-argument", "題目內容不能為空");
+    }
 
-    // 3. 設計 Prompt (提詞) - 這是 AI 的靈魂
-    const prompt = `
-      你是一位親切、幽默且專業的環保教育志工。
-      現在有一位使用者在回答關於「海洋廢棄物監測 (ICC)」的問題時答錯了。
-      
-      【題目資訊】
-      - 題目：${questionText}
-      - 題型：${questionType}
-      - 使用者的錯誤答案：${userAnswer} (如果是空值代表未作答)
-      - 正確答案：${correctOption}
+    try {
+        // 2. 設定 AI 模型 
+        // (建議：如果遇到 429 錯誤，請改回 "gemini-1.5-flash-8b")
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-      【你的任務】
-      請用一段話(約50-80字)告訴使用者為什麼錯，並給予正確的觀念。
-      語氣要溫柔鼓勵，不要說教。可以適當使用emoji。
-      如果使用者的答案明顯是亂選的，可以幽默地提醒他。
-      
-      請直接輸出解析內容，不要有其他開場白。
-    `;
+        // 3. 設計 Prompt (提詞)
+        const prompt = `
+          你是一位親切、幽默且專業的環保教育志工。
+          現在有一位使用者在回答關於「海洋廢棄物監測 (ICC)」的問題時答錯了。
+          
+          【題目資訊】
+          - 題目：${questionText}
+          - 題型：${questionType}
+          - 使用者的錯誤答案：${userAnswer} (如果是空值代表未作答)
+          - 正確答案：${correctOption}
 
-    // 4. 發送給 AI
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const feedback = response.text();
+          【你的任務】
+          請用一段話(約50-80字)告訴使用者為什麼錯，並給予正確的觀念。
+          語氣要溫柔鼓勵，不要說教。可以適當使用emoji。
+          如果使用者的答案明顯是亂選的，可以幽默地提醒他。
+          
+          請直接輸出解析內容，不要有其他開場白。
+        `;
 
-    // 5. 回傳給前端
-    return { feedback: feedback.trim() };
+        // 4. 發送給 AI
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const feedback = response.text();
 
-  } catch (error) {
-    console.error("AI Error:", error);
-    // 如果 AI 掛了，回傳一個通用訊息，不要讓程式崩潰
-    return { feedback: "系統忙碌中，但別氣餒，正確答案是：" + correctOption + "！加油！" };
-  }
+        // 5. 回傳給前端
+        return { feedback: feedback.trim() };
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        // 如果 AI 掛了，回傳一個通用訊息
+        return { feedback: "系統忙碌中，但別氣餒，正確答案是：" + correctOption + "！加油！" };
+    }
 });
