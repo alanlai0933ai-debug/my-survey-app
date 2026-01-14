@@ -1,7 +1,7 @@
 // src/views/SurveyTaker.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronRight, Target, Zap, Trophy, XCircle, AlertCircle, BookmarkCheck, Flame } from 'lucide-react';
+import { Loader2, User, Play, Clock, Star, CheckCircle, ChevronRight, Zap, Trophy, XCircle, AlertCircle, BookmarkCheck, Flame } from 'lucide-react';
 import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import useSound from 'use-sound';
@@ -23,31 +23,19 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
   const [times, setTimes] = useState({});
   // eslint-disable-next-line no-unused-vars
   const [interactionCount, setInteractionCount] = useState(0);
-
+  
   // 控制是否顯示即時回饋 (詳解模式)
   const [showFeedback, setShowFeedback] = useState(false);
-  const [isCurrentCorrect, setIsCurrentCorrect] = useState(false); 
-
-  // 🔥 新增：Combo 連擊狀態
+  const [isCurrentCorrect, setIsCurrentCorrect] = useState(false);
+  
+  // Combo 連擊狀態
   const [combo, setCombo] = useState(0);
 
-  // 音效
-  const [playClick] = useSound('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3', { volume: 0.5 });
-  const [playCorrect] = useSound('https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3', { volume: 0.5 });
-  const [playWrong] = useSound('https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3', { volume: 0.5 });
-  // 🌟 Combo 音效 (可選，這裡先用正確音效代替，您也可以找更熱血的音效)
-  const [playCombo] = useSound('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3', { volume: 0.4 }); 
-
-  // 🔴 載入中防呆
-  if (!quizData || !quizData.questions || quizData.questions.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-slate-400">
-        <Loader2 className="animate-spin mb-2" size={32}/>
-        <p>正在載入挑戰內容，請稍候...</p>
-        <button onClick={onCancel} className="mt-4 text-sm text-indigo-500 hover:underline">返回首頁</button>
-      </div>
-    );
-  }
+  // 🔊 音效設定
+  const [playClick] = useSound('', { volume: 0.5 });
+  const [playCorrect] = useSound('', { volume: 0.5 });
+  const [playWrong] = useSound('', { volume: 0.5 });
+  // const [playCombo] = useSound('', { volume: 0.4 });
 
   // Timer Effect
   useEffect(() => {
@@ -64,13 +52,15 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
 
   useEffect(() => {
     if(isStarted) setStartTime(Date.now());
-    // 切換題目時，重置回饋狀態 (注意：Combo 不重置，要延續！)
+    // 切換題目時，重置回饋狀態
     setShowFeedback(false);
     setIsCurrentCorrect(false);
-  }, [currentQ]);
+  }, [currentQ, isStarted]);
 
   // 成績計算邏輯
   const calculateStats = () => {
+    if (!quizData || !quizData.questions) return []; 
+
     const scores = {
       '觀察力': { val: 0, max: 0 }, 
       '決策力': { val: 0, max: 0 }, 
@@ -78,8 +68,8 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
       '反應力': { val: 0, count: 0 }, 
       '專注度': { val: 0, max: 0 } 
     };
+
     quizData.questions.forEach(q => {
-      // 🔥 修正：如果這題設定為不計分，直接跳過統計
       if (q.isScored === false) return;
 
       const ans = answers[q.id];
@@ -118,6 +108,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
         }
       }
     });
+
     return Object.keys(scores).map(subject => {
       const s = scores[subject];
       let finalScore = 0;
@@ -130,14 +121,16 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     });
   };
 
+  const currentStats = useMemo(() => calculateStats(), [answers, times, quizData]);
+
   // 作答處理
   const handleAnswer = (val) => {
     if (showFeedback) return;
-    playClick();
+    
+    // playClick(); 
     const qId = quizData.questions[currentQ].id;
     const now = Date.now();
     const spent = (now - startTime) / 1000;
-    
     setTimes(prev => ({ ...prev, [qId]: (prev[qId] || 0) + spent }));
     setStartTime(now);
     setInteractionCount(prev => prev + 1);
@@ -153,15 +146,15 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     }
   };
 
-  // 🔥 核心修正：檢查答案 + Combo 邏輯
-  const handleCheckAnswer = () => {
+  // 判定答案與顯示特效
+  const handleCheckAnswer = async () => {
     const q = quizData.questions[currentQ];
     const ans = answers[q.id];
     let correct = false;
 
-    // 判斷邏輯 (含不計分題防呆)
+    // --- 判斷邏輯 ---
     if (q.isScored === false) {
-       correct = true; // 不計分題視為通過，延續 Combo
+       correct = true;
     } else {
         if (q.type === 'choice') {
            if (q.isMulti) {
@@ -187,17 +180,16 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     setIsCurrentCorrect(correct);
     setShowFeedback(true);
 
-    // 🔥 Combo 更新邏輯
+    // Combo 更新邏輯
     if (correct) {
-       setCombo(prev => prev + 1); // 答對加 1
+       setCombo(prev => prev + 1);
        if (combo >= 1) { 
-          // 如果已經連擊 (這是第2題以上)，播放連擊音效
-          playCombo();
+          // playCombo(); 
        } else {
           playCorrect(); 
        }
     } else {
-       setCombo(0); // 答錯歸零
+       setCombo(0);
        playWrong();
     }
   };
@@ -212,8 +204,17 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
     }
   };
 
-  const currentStats = useMemo(() => calculateStats(), [answers, times]);
+  if (!quizData || !quizData.questions || quizData.questions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-slate-400">
+        <Loader2 className="animate-spin mb-2" size={32}/>
+        <p>正在載入挑戰內容，請稍候...</p>
+        <button onClick={onCancel} className="mt-4 text-sm text-indigo-500 hover:underline">返回首頁</button>
+      </div>
+    );
+  }
 
+  // 尚未開始遊戲的畫面
   if (!isStarted) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[500px] text-center space-y-8 px-4">
@@ -255,7 +256,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
   return (
     <div className="flex flex-col lg:flex-row gap-8 h-full items-start relative" ref={containerRef}>
       
-      {/* 🔥 Combo 浮動特效：絕對定位在畫面中央 */}
+      {/* Combo 特效區 */}
       <AnimatePresence>
         {showFeedback && combo > 1 && (
            <motion.div 
@@ -275,14 +276,10 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
         )}
       </AnimatePresence>
 
-      {/* 左側：主作答區 */}
       <div className="flex-1 w-full max-w-2xl mx-auto order-2 lg:order-1">
-        
-        {/* 頂部資訊列 */}
         <div className="mb-6 flex flex-wrap justify-between items-end gap-2">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+           <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
               Level {currentQ + 1} / {quizData.questions.length}
-              {/* 🔥 小 Combo 指示器 (持續顯示) */}
               {combo > 1 && (
                  <motion.span 
                    initial={{ scale: 0 }} 
@@ -296,7 +293,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
           <div className="flex items-center gap-2 md:gap-4">
               <span className="text-indigo-600 font-bold text-sm md:text-base">{nickname}</span>
               <span className="bg-slate-100 text-slate-600 px-2 md:px-3 py-1 rounded-lg text-xs md:text-sm font-bold flex items-center gap-2">
-                <Clock size={14}/> {formatTime(elapsedTime)}
+                 <Clock size={14}/> {formatTime(elapsedTime)}
               </span>
               <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
                  <Star size={12} fill="currentColor"/> {q.points || 0}分
@@ -304,16 +301,16 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
           </div>
         </div>
 
-        {/* 海浪進度條 */}
+        {/* 進度條 */}
         <div className="relative mb-8 mt-4">
            <div className="h-5 bg-blue-50/50 rounded-full overflow-hidden shadow-inner border border-blue-100 relative backdrop-blur-sm">
                 <motion.div 
-                className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 relative overflow-hidden"
-                initial={{ width: 0 }} 
-                animate={{ width: `${progress}%` }} 
-                transition={{ type: "spring", stiffness: 35, damping: 12 }}
+                  className="h-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 relative overflow-hidden"
+                  initial={{ width: 0 }} 
+                  animate={{ width: `${progress}%` }} 
+                  transition={{ type: "spring", stiffness: 35, damping: 12 }}
                 >
-                    <motion.div 
+                   <motion.div 
                     className="absolute inset-0 w-full h-full opacity-20"
                     style={{ backgroundImage: 'linear-gradient(45deg,rgba(255,255,255,.3) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.3) 50%,rgba(255,255,255,.3) 75%,transparent 75%,transparent)', backgroundSize: '1rem 1rem' }}
                     animate={{ backgroundPosition: ["0rem 0rem", "1rem 0rem"] }}
@@ -337,7 +334,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
         </div>
 
         <AnimatePresence mode="wait">
-          <motion.div
+           <motion.div
             key={currentQ}
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -376,7 +373,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                       let btnClass = "border-slate-100 hover:border-indigo-200 hover:bg-slate-50";
                       let iconClass = "border-slate-300";
                       let textClass = "text-slate-600";
-
+                      
                       if (showFeedback) {
                          if (isSurveyMode) {
                             if (selected) {
@@ -415,7 +412,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                           {image && <img src={image} className="w-full h-32 object-cover rounded-lg mb-2" alt="Option" />}
                           <div className="flex items-center gap-3">
                             <div className={`w-6 h-6 rounded flex-shrink-0 flex items-center justify-center border-2 ${q.isMulti ? 'rounded-md' : 'rounded-full'} ${iconClass}`}>
-                               {(selected || (showFeedback && !isSurveyMode && isCorrectOption)) && <CheckCircle size={14} className="text-white" />}
+                                {(selected || (showFeedback && !isSurveyMode && isCorrectOption)) && <CheckCircle size={14} className="text-white" />}
                             </div>
                             <span className={`font-bold ${textClass}`}>{label}</span>
                           </div>
@@ -451,7 +448,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                    <div className="flex items-start gap-2">
                       <AlertCircle className="text-indigo-500 mt-1" size={20}/>
                       <div>
-                         <h4 className="font-bold text-slate-700 mb-1">解析：</h4>
+                         <h4 className="font-bold text-slate-700 mb-1">標準解析：</h4>
                          <p className="text-slate-600 text-sm leading-relaxed">
                             {q.note || "本題暫無詳細解析。"}
                          </p>
@@ -460,7 +457,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                 </motion.div>
              )}
 
-          </motion.div>
+           </motion.div>
         </AnimatePresence>
 
         <div className="flex justify-end mt-8 pb-10">
@@ -485,12 +482,11 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
         </div>
       </div>
 
-      {/* 右側：即時分析 (保持 RWD) */}
       <div className="w-full lg:w-80 order-1 lg:order-2 lg:sticky lg:top-28">
         <div className="bg-white p-4 md:p-6 rounded-3xl shadow-xl border border-slate-100">
           <h4 className="text-center font-bold text-slate-800 mb-4 flex items-center justify-center gap-2"><Trophy size={18} className="text-pink-500"/> 即時能力分析</h4>
           <div className="h-48 md:h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+             <ResponsiveContainer width="100%" height="100%">
               <RadarChart cx="50%" cy="50%" outerRadius="70%" data={currentStats}>
                 <PolarGrid stroke="#e2e8f0" />
                 <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />

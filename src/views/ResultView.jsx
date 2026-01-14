@@ -1,15 +1,22 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { Clock, Share2, Award, Calendar, Target, CheckCircle, Zap, AlertTriangle, ArrowRight, User, Mail } from 'lucide-react';
+import { Clock, Share2, Award, Calendar, Target, CheckCircle, Zap, AlertTriangle, ArrowRight, User, Mail, Loader2 } from 'lucide-react';
 import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
 import ZoomableImage from '../components/ZoomableImage';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import toast from 'react-hot-toast';
 import html2canvas from 'html2canvas';
 
+// 🔥 1. 引入 Firebase Functions
+import { getFunctions, httpsCallable } from 'firebase/functions';
+
 export default function ResultView({ quizData, userAnswers, stats, totalTime, onBack, nickname, inputEmail }) {
   const cardRef = useRef(null);
   
+  // 🔥 2. 新增 AI 相關狀態
+  const [aiFeedback, setAiFeedback] = useState({}); // 儲存每一題的 AI 回饋 { [qId]: "..." }
+  const [loadingAi, setLoadingAi] = useState({});   // 儲存每一題的載入狀態 { [qId]: true/false }
+
   const renderPolygon = (points) => {
     if (!points) return "";
     return points.map(p => `${p.x},${p.y}`).join(' ');
@@ -56,7 +63,6 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
       detail = `命中 ${hitCount} / ${totalTargets}`;
 
     } else if (q.type === 'sorting') {
-      // 🔥 修復：分類題錯誤詳解邏輯
       const userMap = userAns || {};
       let correctCount = 0;
       q.items.forEach(item => {
@@ -90,6 +96,56 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
     return { ...q, isCorrect, detail, userAns, gainedPoints, sortingErrors };
   });
 
+  // --- 🔥 3. AI 呼叫函式 ---
+  const handleGetAiFeedback = async (q, userAns) => {
+    if (loadingAi[q.id] || aiFeedback[q.id]) return; // 防止重複點擊
+
+    setLoadingAi(prev => ({ ...prev, [q.id]: true }));
+
+    try {
+      // 1. 準備正確答案字串
+      let correctText = "";
+      if (q.type === 'choice') {
+         if (q.isMulti) {
+            correctText = q.options.filter(o => o.isCorrect).map(o => o.label).join('、');
+         } else {
+            correctText = q.options.find(o => o.isCorrect)?.label;
+         }
+      } else if (q.type === 'hotspot') {
+         correctText = `找出所有 ${q.targets?.length || 0} 個熱點區域`;
+      } else if (q.type === 'sorting') {
+         correctText = "將所有項目正確分類";
+      }
+
+      // 2. 準備使用者答案字串
+      let userAnsText = "";
+      if (q.type === 'choice') {
+         userAnsText = Array.isArray(userAns) ? userAns.join('、') : (userAns || "未作答");
+      } else if (q.type === 'sorting') {
+         userAnsText = q.items.map(item => `${item.text}:${userAns[item.id]||'未分類'}`).join('; ');
+      } else {
+         userAnsText = "使用者標記了位置"; // 熱點題較難用文字描述座標
+      }
+
+      const functions = getFunctions();
+      const generateFeedback = httpsCallable(functions, 'generateQuizFeedback');
+      
+      const result = await generateFeedback({
+          questionText: q.text,
+          userAnswer: userAnsText,
+          correctOption: correctText,
+          questionType: q.type
+      });
+      
+      setAiFeedback(prev => ({ ...prev, [q.id]: result.data.feedback }));
+    } catch (error) {
+      console.error("AI Error:", error);
+      toast.error("AI 老師目前忙碌中，請稍後再試");
+    } finally {
+      setLoadingAi(prev => ({ ...prev, [q.id]: false }));
+    }
+  };
+
   // --- 特效與下載 ---
   useEffect(() => {
     const passingScore = maxScore * 0.6;
@@ -101,8 +157,8 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
       const interval = setInterval(function() {
         const timeLeft = animationEnd - Date.now();
         if (timeLeft <= 0) return clearInterval(interval);
-        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
-        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+        confetti({ ...defaults, particleCount: 50, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+        confetti({ ...defaults, particleCount: 50, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
       }, 250);
       return () => clearInterval(interval);
     }
@@ -136,7 +192,7 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
       {/* 頂部按鈕 */}
       <div className="flex justify-between items-center print:hidden">
          <button onClick={onBack} className="text-slate-500 font-bold hover:text-slate-800 flex items-center gap-2 transition-colors">
-            ← 返回首頁
+           ← 返回首頁
          </button>
          <button onClick={handleDownload} className="bg-indigo-600 text-white px-5 py-2.5 rounded-full font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all hover:-translate-y-1">
            <Share2 size={18}/> 下載證書
@@ -159,7 +215,7 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
             <p className="text-slate-400 text-sm font-medium mt-1">CERTIFICATE OF ACHIEVEMENT</p>
           </div>
 
-          {/* 🔥 新增 2：使用者資訊 (大頭貼 + 暱稱 + Email) */}
+          {/* 2. 使用者資訊 */}
           <div className="flex flex-col items-center justify-center mb-6 relative z-10">
              <div className="w-16 h-16 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-full flex items-center justify-center shadow-lg mb-2 border-4 border-white">
                 <User size={32} className="text-white" />
@@ -168,7 +224,7 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
              {inputEmail && <p className="text-xs text-slate-400 flex items-center gap-1"><Mail size={10}/> {inputEmail}</p>}
           </div>
 
-          {/* 🔥 修復 1：分數區 (使用 flex baseline 解決重疊) */}
+          {/* 3. 分數區 */}
           <div className="flex flex-col items-center justify-center mb-6 relative z-10">
              <div className="flex items-baseline justify-center gap-2 text-indigo-600">
                 <span className="text-7xl font-black tracking-tighter leading-none drop-shadow-sm">
@@ -185,7 +241,7 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
              </div>
           </div>
 
-          {/* 雷達圖 */}
+          {/* 4. 雷達圖 */}
           {stats && (
             <div className="w-full h-56 relative z-10 -ml-2">
               <ResponsiveContainer width="100%" height="100%">
@@ -199,7 +255,7 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
             </div>
           )}
 
-          {/* 底部評語 */}
+          {/* 5. 底部評語 */}
           <div className="mt-6 pt-6 border-t-2 border-dashed border-slate-100 text-center relative z-10">
              <div className="flex justify-center gap-3 mb-2">
                 <div className="bg-green-50 text-green-700 px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
@@ -247,7 +303,7 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
                 </div>
               )}
 
-              {/* 🔥 修復 2：分類題詳細錯誤顯示 */}
+              {/* 分類題詳細錯誤顯示 */}
               {r.type === 'sorting' && r.sortingErrors && r.sortingErrors.length > 0 && (
                 <div className="bg-red-50 p-4 rounded-xl text-sm text-red-800 border border-red-100 space-y-3">
                   <div className="font-bold flex items-center gap-2 text-red-600">
@@ -288,6 +344,34 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
               {r.type !== 'choice' && r.type !== 'sorting' && (
                  <div className="text-sm font-medium p-3 rounded-lg bg-slate-50 text-slate-600">{r.detail}</div>
               )}
+
+              {/* 🔥🔥🔥 新增：AI 導師點評按鈕區 🔥🔥🔥 */}
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                  {aiFeedback[r.id] ? (
+                     <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 relative overflow-hidden animate-in fade-in zoom-in duration-300">
+                         <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-indigo-500 to-purple-500"/>
+                         <h5 className="font-bold text-indigo-700 flex items-center gap-2 mb-2 text-sm">
+                             <Zap size={16} className="fill-indigo-200"/> AI 智慧導師點評
+                         </h5>
+                         <p className="text-slate-700 text-sm leading-relaxed font-medium">
+                             {aiFeedback[r.id]}
+                         </p>
+                     </div>
+                  ) : (
+                     <button 
+                        onClick={() => handleGetAiFeedback(r, r.userAns)}
+                        disabled={loadingAi[r.id]}
+                        className="text-sm font-bold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-3 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50"
+                     >
+                        {loadingAi[r.id] ? (
+                            <><Loader2 size={16} className="animate-spin"/> 正在分析...</>
+                        ) : (
+                            <><Zap size={16}/> 聽聽 AI 老師怎麼說？</>
+                        )}
+                     </button>
+                  )}
+              </div>
+
             </div>
           ))}
         </div>
