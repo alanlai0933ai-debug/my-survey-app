@@ -45,7 +45,7 @@ export function AuthProvider({ children }) {
     user,
     loading,
     loginAdmin,
-    isAdmin: user && ["alanlai0933.ai@gmail.com", "alanlai0933@gmail.com"].includes(user.email) // 這裡可以集中管理管理員邏輯
+    isAdmin: user && ["alanlai0933.ai@gmail.com", "alanlai0933@gmail.com","coastalcleanup00@gmail.com"].includes(user.email) // 這裡可以集中管理管理員邏輯
   };
 
   return (
