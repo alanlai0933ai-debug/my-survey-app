@@ -1,0 +1,27 @@
+專案打包程式碼
+
+# 1. 清理垃圾檔案 (刪除 node_modules, dist, .netlify, .firebase)
+Write-Host "正在清理專案 (瘦身中)..." -ForegroundColor Cyan
+Remove-Item -Path "node_modules", "dist", ".netlify", ".firebase", "functions/node_modules" -Recurse -Force -ErrorAction SilentlyContinue
+
+# 2. 執行壓縮 (打包成 ZIP)
+$zipName = "Project_Backup_" + (Get-Date -Format 'yyyyMMdd_HHmm') + ".zip"
+Write-Host "正在打包成 $zipName ..." -ForegroundColor Cyan
+Compress-Archive -Path * -DestinationPath $zipName -Force -ErrorAction SilentlyContinue
+
+# 3. 完成提示
+Write-Host "✅ 打包完成！檔案名稱：$zipName" -ForegroundColor Green
+
+
+⚡ 未來如何復活？ (到了新電腦)
+解壓縮後，記得執行這兩行指令把依賴包裝回來：
+# 1. 安裝前端依賴
+npm install --legacy-peer-deps
+
+# 2. 安裝後端依賴 (很容易忘記這步！)
+cd functions
+npm install
+cd ..
+
+#3登入 Firebase：
+firebase login
