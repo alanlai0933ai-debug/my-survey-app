@@ -438,7 +438,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                    isReviewMode={showFeedback} 
                 />
              )}
-
+            {/*
              {showFeedback && (
                 <motion.div 
                    initial={{ height: 0, opacity: 0 }} 
@@ -456,6 +456,7 @@ export default function SurveyTaker({ quizData, onSubmit, onCancel, isSubmitting
                    </div>
                 </motion.div>
              )}
+               */}
 
            </motion.div>
         </AnimatePresence>
