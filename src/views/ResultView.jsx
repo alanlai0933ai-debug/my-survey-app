@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import confetti from 'canvas-confetti';
-import { Clock, Share2, Award, Calendar, Target, CheckCircle, Zap, AlertTriangle, ArrowRight, User, Mail, Loader2 } from 'lucide-react';
+import { Clock, Share2, Award, Calendar, Target, CheckCircle, Zap, AlertTriangle, ArrowRight, User, Mail, Loader2, X } from 'lucide-react';
 import { isPointInPolygon, formatTime } from '../utils/mathHelpers';
 import ZoomableImage from '../components/ZoomableImage';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
@@ -16,6 +17,7 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
   // 🔥 2. 新增 AI 相關狀態
   const [aiFeedback, setAiFeedback] = useState({}); // 儲存每一題的 AI 回饋 { [qId]: "..." }
   const [loadingAi, setLoadingAi] = useState({});   // 儲存每一題的載入狀態 { [qId]: true/false }
+  const [errorPreviewImg, setErrorPreviewImg] = useState(null);
 
   const renderPolygon = (points) => {
     if (!points) return "";
@@ -71,6 +73,8 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
            if (item.correctCategory && userCat !== item.correctCategory) {
              sortingErrors.push({
                 text: item.text,
+                // 🌟 新增這一行：把項目的圖片也存進錯誤清單中
+                image: item.image, 
                 userCat: userCat,
                 correctCat: item.correctCategory,
                 type: 'wrong'
@@ -81,6 +85,8 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
          } else {
            sortingErrors.push({
               text: item.text,
+              // 🌟 新增這一行：未分類的項目也需要存入圖片
+              image: item.image, 
               correctCat: item.correctCategory,
               type: 'missed'
            });
@@ -303,35 +309,48 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
                 </div>
               )}
 
-              {/* 分類題詳細錯誤顯示 */}
-              {r.type === 'sorting' && r.sortingErrors && r.sortingErrors.length > 0 && (
-                <div className="bg-red-50 p-4 rounded-xl text-sm text-red-800 border border-red-100 space-y-3">
-                  <div className="font-bold flex items-center gap-2 text-red-600">
-                    <AlertTriangle size={16}/> 錯誤修正：
-                  </div>
-                  <ul className="space-y-2 pl-1">
-                    {r.sortingErrors.map((err, i) => (
-                      <li key={i} className="flex items-start gap-2 leading-tight">
-                        <span className="mt-0.5 text-red-400">•</span>
-                        <div>
-                          <span className="font-bold text-slate-700 mr-2">{err.text}</span>
-                          {err.type === 'wrong' ? (
-                            <span className="text-slate-500 bg-white px-2 py-0.5 rounded border border-red-100 text-xs inline-flex items-center gap-1 flex-wrap">
-                                (誤: <span className="text-red-500 line-through decoration-2 mx-1">{err.userCat}</span> 
-                                <ArrowRight size={12} className="text-slate-400"/> 
-                                正: <span className="text-green-600 font-black mx-1">{err.correctCat}</span>)
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 bg-white px-2 py-0.5 rounded border border-red-100 text-xs inline-flex items-center gap-1 flex-wrap">
-                                (未分類 <ArrowRight size={12}/> 正: <span className="text-green-600 font-black mx-1">{err.correctCat}</span>)
-                            </span>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+{/* 分類題詳細錯誤顯示 */}
+{r.type === 'sorting' && r.sortingErrors && r.sortingErrors.length > 0 && (
+  <div className="bg-red-50 p-4 rounded-xl text-sm text-red-800 border border-red-100 space-y-3">
+    <div className="font-bold flex items-center gap-2 text-red-600">
+      <AlertTriangle size={16}/> 錯誤修正：
+    </div>
+    <ul className="space-y-3 pl-1"> {/* 加大一點間距讓圖片不擁擠 */}
+      {r.sortingErrors.map((err, i) => (
+        <li key={i} className="flex items-center gap-3 leading-tight"> {/* 改用 items-center 讓圖片與文字置中對齊 */}
+          <span className="text-red-400 shrink-0">•</span>
+          
+          {/* 注意：這裡假設您的圖片網址變數名稱叫做 err.image，如果不同請修改 */}
+          {/* 🌟 這是為您新增的縮圖區塊 */}
+          {err.image && (
+            <img 
+              src={err.image} 
+              alt="錯誤項目" 
+              className="w-12 h-12 object-cover rounded-md border border-slate-200 shadow-sm shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => setErrorPreviewImg(err.image)}
+            />
+          )}
+          {/* 🌟 縮圖區塊結束 */}
+
+          <div className="flex-1">
+            <span className="font-bold text-slate-700 mr-2">{err.text}</span>
+            {err.type === 'wrong' ? (
+              <span className="text-slate-500 bg-white px-2 py-1 rounded border border-red-100 text-xs inline-flex items-center gap-1 flex-wrap">
+                  (誤: <span className="text-red-500 line-through decoration-2 mx-1">{err.userCat}</span> 
+                  <ArrowRight size={12} className="text-slate-400"/> 
+                  正: <span className="text-green-600 font-black mx-1">{err.correctCat}</span>)
+              </span>
+            ) : (
+              <span className="text-slate-400 bg-white px-2 py-1 rounded border border-red-100 text-xs inline-flex items-center gap-1 flex-wrap">
+                  (未分類 <ArrowRight size={12}/> 正: <span className="text-green-600 font-black mx-1">{err.correctCat}</span>)
+              </span>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  </div>
+)}
               
               {/* 選擇題詳解 */}
               {r.type === 'choice' && (
@@ -376,6 +395,29 @@ export default function ResultView({ quizData, userAnswers, stats, totalTime, on
           ))}
         </div>
       </div>
+      {/* 🌟 這是為錯誤解析專屬打造的放大視窗，貼在最後一個 </div> 之前 */}
+      {errorPreviewImg && ReactDOM.createPortal(
+        <div 
+          className="fixed inset-0 z-[10000] bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={(e) => { e.stopPropagation(); setErrorPreviewImg(null); }}
+        >
+          <div className="relative max-w-4xl max-h-full animate-in fade-in zoom-in duration-300">
+            <img 
+              src={errorPreviewImg} 
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border border-white/20" 
+              alt="Zoomed Error Preview"
+            />
+            <button 
+              onClick={() => setErrorPreviewImg(null)}
+              className="absolute -top-12 right-0 text-white hover:text-red-400 transition-colors bg-white/10 p-2 rounded-full"
+            >
+              <X size={24} />
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+      {/* 🌟 放大視窗區塊結束 */}
     </div>
   );
 }
