@@ -129,15 +129,51 @@ export default function StatsDashboard({ quizData, responses }) {
   }, [quizData, responses]);
 
   const selectedUserData = responses.find(r => r.id === selectedUser);
-// --- 🏆 新增：計算前三名 ---
+// --- 🏆 修正：計算前三名 (與 ResultView 同步計分邏輯) ---
   const topPlayers = useMemo(() => {
-    // 1. 過濾掉沒有暱稱的，並依分數高低排序
+    if (!quizData || !quizData.questions) return [null, null, null];
+
+    // 1. 過濾掉沒有暱稱的，並計算真正的得分
     const sorted = [...responses]
       .filter(r => r.nickname && r.nickname !== 'Guest')
       .map(r => {
-         // 計算總分 (這裡沿用您原本的邏輯，或是讀取 stats)
-         const score = r.stats ? Math.round(r.stats.reduce((acc, s) => acc + s.A, 0) / r.stats.length) : 0;
-         return { ...r, score };
+         // 🔥 這裡改用與 ResultView 一模一樣的真實配分邏輯
+         let realScore = 0;
+         
+         quizData.questions.forEach(q => {
+           const ans = r.answers[q.id];
+           const points = Number(q.points) || 0;
+           if (!ans) return;
+
+           if (q.type === 'choice') {
+             if (q.isMulti) {
+               const correctOptions = q.options.filter(o => o.isCorrect).map(o => o.label);
+               const userSelected = Array.isArray(ans) ? ans : [];
+               if (correctOptions.length === userSelected.length && correctOptions.every(v => userSelected.includes(v))) {
+                 realScore += points;
+               }
+             } else {
+               if (ans === q.options.find(o => o.isCorrect)?.label) realScore += points;
+             }
+           } else if (q.type === 'hotspot') {
+             const totalTargets = q.targets?.length || 0;
+             const targetHits = (q.targets || []).map(t => (ans || []).some(pin => isPointInPolygon(pin, t.points)));
+             const hitCount = targetHits.filter(h => h).length;
+             if (totalTargets > 0) {
+               realScore += Math.round((hitCount / totalTargets) * points);
+             }
+           } else if (q.type === 'sorting') {
+             let correctCount = 0;
+             q.items.forEach(item => {
+               if (ans[item.id] === item.correctCategory) correctCount++;
+             });
+             const totalItems = q.items.length || 1;
+             // 💡 確保這裡也有算到部分給分
+             realScore += Math.round((correctCount / totalItems) * points);
+           }
+         });
+
+         return { ...r, score: realScore };
       })
       .sort((a, b) => b.score - a.score || a.totalTime - b.totalTime) // 分數同則比時間短
       .slice(0, 3); // 取前三
@@ -147,7 +183,7 @@ export default function StatsDashboard({ quizData, responses }) {
     
     // 調整順序為：[第二名, 第一名, 第三名] (為了視覺上的頒獎台順序)
     return [sorted[1], sorted[0], sorted[2]];
-  }, [responses]);
+  }, [responses, quizData]); // 💡 依賴陣列加入了 quizData
 
   // --- 🎨 頒獎台子組件 ---
   const RenderPodium = () => (
